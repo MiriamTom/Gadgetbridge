@@ -22,6 +22,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -99,6 +100,7 @@ public class HeartRateDialog extends Dialog {
         if (HeartRateUtils.getInstance().isValidHeartRateValue(heartRate)) {
             heart_rate_hr.setVisibility(View.VISIBLE);
             heart_rate_widget_hr_value.setText(String.valueOf(heartRate));
+            Log.d("HeartRateDialog", "Measured heart rate: " + heartRate);
         }
     }
 
