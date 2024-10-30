@@ -17,6 +17,10 @@
             android:title="@string/action_discover"
             android:iconTint="#7E7E7E"
             android:icon="@drawable/ic_add" />
+        <item
+            android:id="@+id/action_heart_rate"
+            android:title="Cloud"
+             />
 
         <item android:id="@+id/action_quit"
             android:title="@string/action_quit"

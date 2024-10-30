@@ -156,13 +156,13 @@ public final class BtLEQueue {
                                 break;
                             }
                             while ((action instanceof WriteAction) && mPauseTransaction && !mAbortTransaction) {
-                              LOG.info("Pausing WriteAction");
-                              try {
-                                  Thread.sleep(100);
-                              } catch (Exception e) {
-                                  LOG.info("Exception during pause: {}", e);
-                                  break;
-                              }
+                                LOG.info("Pausing WriteAction");
+                                try {
+                                    Thread.sleep(100);
+                                } catch (Exception e) {
+                                    LOG.info("Exception during pause: {}", e);
+                                    break;
+                                }
                             }
                             mWaitCharacteristic = action.getCharacteristic();
                             mWaitForActionResultLatch = new CountDownLatch(1);
@@ -380,7 +380,7 @@ public final class BtLEQueue {
     }
 
     public void setPaused(boolean paused) {
-      mPauseTransaction = paused;
+        mPauseTransaction = paused;
     }
 
     public void dispose() {

@@ -66,6 +66,8 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import nodomain.freeyourgadget.gadgetbridge.activities.ControlCenterv2;
 import nodomain.freeyourgadget.gadgetbridge.activities.devicesettings.DeviceSettingsPreferenceConst;
+import nodomain.freeyourgadget.gadgetbridge.cloud.HeartRateMonitor;
+import nodomain.freeyourgadget.gadgetbridge.cloud.HeartRateService;
 import nodomain.freeyourgadget.gadgetbridge.database.DBHandler;
 import nodomain.freeyourgadget.gadgetbridge.database.DBHelper;
 import nodomain.freeyourgadget.gadgetbridge.database.DBOpenHelper;
@@ -145,6 +147,8 @@ public class GBApplication extends Application {
 
     private static GBApplication app;
 
+    private HeartRateMonitor heartRateMonitor = new HeartRateMonitor();
+
     private static final Logging logging = new Logging() {
         @Override
         protected String createLogDirectory() throws IOException {
@@ -217,6 +221,8 @@ public class GBApplication extends Application {
     public void onCreate() {
         app = this;
         super.onCreate();
+
+        startService(new Intent(this, HeartRateService.class));
 
         if (lockHandler != null) {
             // guard against multiple invocations (robolectric)

@@ -385,8 +385,16 @@ public class GBDeviceService implements DeviceService {
 
     @Override
     public void onHeartRateTest() {
+
+
         Intent intent = createIntent().setAction(ACTION_HEARTRATE_TEST);
         invokeService(intent);
+
+        // Added functionality
+        Context context = GBApplication.getContext();
+
+        context.sendBroadcast(intent);
+
     }
 
     @Override

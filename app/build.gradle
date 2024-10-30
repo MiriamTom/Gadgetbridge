@@ -261,6 +261,9 @@ dependencies {
 
     // Needed for Armenian transliteration
     implementation 'org.ahocorasick:ahocorasick:0.6.3'
+
+    implementation 'org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5'
+
 }
 
 preBuild.dependsOn(":GBDaoGenerator:genSources")

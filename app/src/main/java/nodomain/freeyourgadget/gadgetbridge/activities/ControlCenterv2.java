@@ -90,6 +90,7 @@ import nodomain.freeyourgadget.gadgetbridge.BuildConfig;
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
 import nodomain.freeyourgadget.gadgetbridge.R;
 import nodomain.freeyourgadget.gadgetbridge.activities.discovery.DiscoveryActivityV2;
+import nodomain.freeyourgadget.gadgetbridge.cloud.HeartRateActivity;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivitySample;
 import nodomain.freeyourgadget.gadgetbridge.model.DeviceService;
@@ -441,6 +442,10 @@ public class ControlCenterv2 extends AppCompatActivity
             return false;
         } else if (itemId == R.id.device_action_discover) {
             launchDiscoveryActivity();
+            return false;
+        } else if (itemId == R.id.action_heart_rate) {
+            final Intent heartRateIntent = new Intent(this, HeartRateActivity.class);
+            startActivity(heartRateIntent);
             return false;
         } else if (itemId == R.id.action_quit) {
             GBApplication.quit();
