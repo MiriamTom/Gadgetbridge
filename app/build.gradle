@@ -263,6 +263,7 @@ dependencies {
     implementation 'org.ahocorasick:ahocorasick:0.6.3'
 
     implementation 'org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5'
+    implementation 'com.amazonaws:aws-android-sdk-iot:2.16.4'
 
 }
 

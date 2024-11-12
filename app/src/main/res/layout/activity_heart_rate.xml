@@ -5,6 +5,7 @@
     android:orientation="vertical"
     android:padding="16dp">
 
+    <!-- Display last heart rate sample and action -->
     <TextView
         android:id="@+id/lastSampleTextView"
         android:layout_width="wrap_content"
@@ -27,4 +28,51 @@
         android:textSize="16sp"
         android:layout_marginTop="16dp"/>
 
+    <!-- MQTT Settings Section -->
+    <TextView
+        android:id="@+id/mqttSettingsText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="MQTT Settings"
+        android:textSize="20sp"
+        android:layout_marginTop="16dp" />
+
+    <EditText
+        android:id="@+id/mqttBrokerAddressEditText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter Broker Address"
+        android:textSize="16sp"
+        android:inputType="text" />
+
+    <EditText
+        android:id="@+id/mqttBrokerPortEditText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter Broker Port (default 1883)"
+        android:textSize="16sp"
+        android:inputType="number" />
+
+    <EditText
+        android:id="@+id/mqttLoginEditText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter MQTT Login"
+        android:textSize="16sp"
+        android:inputType="text" />
+
+    <Button
+        android:id="@+id/saveMqttSettingsButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Save MQTT Settings"
+        android:layout_marginTop="16dp" />
+
+    <TextView
+        android:id="@+id/connectionStatusTextView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Status: Disconnected\nServer: -\nPort: -"
+        android:textSize="16sp"
+        android:layout_marginTop="16dp" />
 </LinearLayout>

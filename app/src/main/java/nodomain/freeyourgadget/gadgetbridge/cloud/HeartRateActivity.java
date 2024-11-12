@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
@@ -31,6 +33,18 @@ public class HeartRateActivity extends AppCompatActivity {
     private TextView lastSampleTextView;
     private TextView heartRateTextView;
     private TextView actionTextView;
+
+    private EditText mqttBrokerAddressEditText;
+    private EditText mqttBrokerPortEditText;
+    private EditText mqttLoginEditText;
+    private EditText mqttPasswordEditText;
+    private Button saveMqttSettingsButton;
+    private TextView connectionStatusTextView;
+
+    private String mqttBrokerAddress;
+    private int mqttBrokerPort;
+    private String mqttLogin;
+    private String mqttPassword;
 
     private final BroadcastReceiver heartRateReceiver = new BroadcastReceiver() {
         @Override
@@ -74,23 +88,29 @@ public class HeartRateActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_heart_rate);
 
+        // Initialize UI elements
         lastSampleTextView = findViewById(R.id.lastSampleTextView);
         heartRateTextView = findViewById(R.id.heartRateTextView);
         actionTextView = findViewById(R.id.actionTextView);
 
-        // Load last heart rate from SharedPreferences
-        loadLastHeartRate();
+        mqttBrokerAddressEditText = findViewById(R.id.mqttBrokerAddressEditText);
+        mqttBrokerPortEditText = findViewById(R.id.mqttBrokerPortEditText);
+        mqttLoginEditText = findViewById(R.id.mqttLoginEditText);
+        saveMqttSettingsButton = findViewById(R.id.saveMqttSettingsButton);
 
-        // Set up the IntentFilter for all the actions
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(DeviceService.ACTION_REALTIME_SAMPLES);
-        filter.addAction(DeviceService.ACTION_HEARTRATE_TEST);
-        filter.addAction(DeviceService.ACTION_ENABLE_REALTIME_HEARTRATE_MEASUREMENT);
-        filter.addAction(DeviceService.ACTION_ENABLE_HEARTRATE_SLEEP_SUPPORT); // Added new action
-        filter.addAction(DeviceService.ACTION_SET_HEARTRATE_MEASUREMENT_INTERVAL); // Added new action
+        // Load and display last saved MQTT settings
+        loadLastMqttSettings();
+        MqttManager.getInstance().connect();
 
-        LocalBroadcastManager.getInstance(this).registerReceiver(heartRateReceiver, filter);
+        // Auto-connect and display connection status
+        displayConnectionStatus();
+
+        saveMqttSettingsButton.setOnClickListener(v -> saveMqttSettings());
     }
+
+
+// Other methods like saveMqttSettings(), loadLastMqttSettings(), etc.
+
 
     private void handleRealtimeSample(Serializable extra) {
         if (extra instanceof ActivitySample) {
@@ -105,9 +125,40 @@ public class HeartRateActivity extends AppCompatActivity {
 
             // Save the latest heart rate and timestamp
             saveLastHeartRate(heartRate, currentTime);
+            MqttManager.getInstance().connect();
+            // Send heart rate data to MQTT broker
+            MqttManager.getInstance().sendHeartRate(heartRate);
         } else {
             LOG.debug("Received unknown sample data");
         }
+    }
+
+    private void saveMqttSettings() {
+        // Retrieve user input for MQTT settings
+        mqttBrokerAddress = mqttBrokerAddressEditText.getText().toString();
+        String portString = mqttBrokerPortEditText.getText().toString();
+        mqttLogin = mqttLoginEditText.getText().toString();
+        mqttPassword = mqttPasswordEditText.getText().toString();
+
+        // Check if port is provided, otherwise use default
+        if (portString.isEmpty()) {
+            mqttBrokerPort = 1883; // Default port
+        } else {
+            mqttBrokerPort = Integer.parseInt(portString);
+        }
+
+        // Save these settings for future use
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        SharedPreferences.Editor editor = prefs.edit();
+        editor.putString("mqttBrokerAddress", mqttBrokerAddress);
+        editor.putInt("mqttBrokerPort", mqttBrokerPort);
+        editor.putString("mqttLogin", mqttLogin);
+        editor.putString("mqttPassword", mqttPassword);
+        editor.apply();
+
+        // Update the MqttManager with the new settings
+        MqttManager.getInstance().setMqttSettings(mqttBrokerAddress, mqttBrokerPort, mqttLogin, mqttPassword);
+        MqttManager.getInstance().connect();
     }
 
     private void saveLastHeartRate(int heartRate, String timestamp) {
@@ -143,4 +194,29 @@ public class HeartRateActivity extends AppCompatActivity {
         super.onDestroy();
         LocalBroadcastManager.getInstance(this).unregisterReceiver(heartRateReceiver);
     }
+    private void loadLastMqttSettings() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        mqttBrokerAddress = prefs.getString("mqttBrokerAddress", "");
+        mqttBrokerPort = prefs.getInt("mqttBrokerPort", 1883);
+        mqttLogin = prefs.getString("mqttLogin", "");
+        mqttPassword = prefs.getString("mqttPassword", "");
+
+        mqttBrokerAddressEditText.setText(mqttBrokerAddress);
+        mqttBrokerPortEditText.setText(String.valueOf(mqttBrokerPort));
+        mqttLoginEditText.setText(mqttLogin);
+        mqttPasswordEditText.setText(mqttPassword);
+    }
+    private void displayConnectionStatus() {
+        MqttManager.getInstance().setConnectionListener(this::onConnectionStatusChanged);
+    }
+
+
+    public void onConnectionStatusChanged(boolean connected, String serverUri, int port) {
+        runOnUiThread(() -> {
+            String status = connected ? "Connected" : "Disconnected";
+            String displayText = String.format("Status: %s\nServer: %s\nPort: %d", status, serverUri, port);
+            connectionStatusTextView.setText(displayText);
+        });
+    }
+
 }
