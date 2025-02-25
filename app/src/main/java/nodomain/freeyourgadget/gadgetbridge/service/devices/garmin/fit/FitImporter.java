@@ -9,7 +9,6 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,29 +16,39 @@ import java.util.Objects;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
-import de.greenrobot.dao.query.QueryBuilder;
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
 import nodomain.freeyourgadget.gadgetbridge.database.DBHandler;
 import nodomain.freeyourgadget.gadgetbridge.database.DBHelper;
+import nodomain.freeyourgadget.gadgetbridge.devices.AbstractTimeSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminActivitySampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminBodyEnergySampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminEventSampleProvider;
+import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminHeartRateRestingSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminHrvSummarySampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminHrvValueSampleProvider;
+import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminIntensityMinutesSampleProvider;
+import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminRespiratoryRateSampleProvider;
+import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminRestingMetabolicRateSampleProvider;
+import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminSleepStatsSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminSleepStageSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminSpo2SampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminStressSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminWorkoutParser;
+import nodomain.freeyourgadget.gadgetbridge.entities.AbstractTimeSample;
 import nodomain.freeyourgadget.gadgetbridge.entities.BaseActivitySummary;
-import nodomain.freeyourgadget.gadgetbridge.entities.BaseActivitySummaryDao;
 import nodomain.freeyourgadget.gadgetbridge.entities.DaoSession;
 import nodomain.freeyourgadget.gadgetbridge.entities.Device;
 import nodomain.freeyourgadget.gadgetbridge.entities.GarminActivitySample;
 import nodomain.freeyourgadget.gadgetbridge.entities.GarminBodyEnergySample;
 import nodomain.freeyourgadget.gadgetbridge.entities.GarminEventSample;
+import nodomain.freeyourgadget.gadgetbridge.entities.GarminHeartRateRestingSample;
+import nodomain.freeyourgadget.gadgetbridge.entities.GarminIntensityMinutesSample;
+import nodomain.freeyourgadget.gadgetbridge.entities.GarminRestingMetabolicRateSample;
 import nodomain.freeyourgadget.gadgetbridge.entities.GarminHrvSummarySample;
 import nodomain.freeyourgadget.gadgetbridge.entities.GarminHrvValueSample;
+import nodomain.freeyourgadget.gadgetbridge.entities.GarminRespiratoryRateSample;
 import nodomain.freeyourgadget.gadgetbridge.entities.GarminSleepStageSample;
+import nodomain.freeyourgadget.gadgetbridge.entities.GarminSleepStatsSample;
 import nodomain.freeyourgadget.gadgetbridge.entities.GarminSpo2Sample;
 import nodomain.freeyourgadget.gadgetbridge.entities.GarminStressSample;
 import nodomain.freeyourgadget.gadgetbridge.entities.User;
@@ -55,12 +64,16 @@ import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitHrvSummary;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitHrvValue;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitMonitoring;
+import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitMonitoringHrData;
+import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitMonitoringInfo;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitPhysiologicalMetrics;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitRecord;
+import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitRespirationRate;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitSession;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitSleepDataInfo;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitSleepDataRaw;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitSleepStage;
+import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitSleepStats;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitSpo2;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitSport;
 import nodomain.freeyourgadget.gadgetbridge.service.devices.garmin.fit.messages.FitStressLevel;
@@ -77,10 +90,14 @@ public class FitImporter {
     private final List<GarminStressSample> stressSamples = new ArrayList<>();
     private final List<GarminBodyEnergySample> bodyEnergySamples = new ArrayList<>();
     private final List<GarminSpo2Sample> spo2samples = new ArrayList<>();
+    private final List<GarminRespiratoryRateSample> respiratoryRateSamples = new ArrayList<>();
+    private final List<GarminHeartRateRestingSample> restingHrSamples = new ArrayList<>();
     private final List<GarminEventSample> events = new ArrayList<>();
+    private final List<GarminSleepStatsSample> sleepStatsSamples = new ArrayList<>();
     private final List<GarminSleepStageSample> sleepStageSamples = new ArrayList<>();
     private final List<GarminHrvSummarySample> hrvSummarySamples = new ArrayList<>();
     private final List<GarminHrvValueSample> hrvValueSamples = new ArrayList<>();
+    private final List<GarminRestingMetabolicRateSample> restingMetabolicRateSamples = new ArrayList<>();
     private final Map<Integer, Integer> unknownRecords = new HashMap<>();
     private FitSleepDataInfo fitSleepDataInfo = null;
     private final List<FitSleepDataRaw> fitSleepDataRawSamples = new ArrayList<>();
@@ -94,7 +111,9 @@ public class FitImporter {
         this.workoutParser = new GarminWorkoutParser(context);
     }
 
-    /** @noinspection StatementWithEmptyBody*/
+    /**
+     * @noinspection StatementWithEmptyBody
+     */
     public void importFile(final File file) throws IOException {
         reset();
 
@@ -150,6 +169,16 @@ public class FitImporter {
                 final FitSleepDataRaw fitSleepDataRaw = (FitSleepDataRaw) record;
                 //LOG.debug("Sleep Data Raw: {}", fitSleepDataRaw);
                 fitSleepDataRawSamples.add(fitSleepDataRaw);
+            } else if (record instanceof FitSleepStats) {
+                final Integer score = ((FitSleepStats) record).getOverallSleepScore();
+                if (score == null) {
+                    continue;
+                }
+                LOG.trace("Sleep stats at {}: {}", ts, record);
+                final GarminSleepStatsSample sample = new GarminSleepStatsSample();
+                sample.setTimestamp(ts * 1000L);
+                sample.setSleepScore(score);
+                sleepStatsSamples.add(sample);
             } else if (record instanceof FitSleepStage) {
                 final FieldDefinitionSleepStage.SleepStage stage = ((FitSleepStage) record).getSleepStage();
                 if (stage == null) {
@@ -179,6 +208,16 @@ public class FitImporter {
                 sample.setTimestamp(ts * 1000L);
                 sample.setSpo2(spo2);
                 spo2samples.add(sample);
+            } else if (record instanceof FitRespirationRate) {
+                final Float respiratoryRate = ((FitRespirationRate) record).getRespirationRate();
+                if (respiratoryRate == null || respiratoryRate <= 0) {
+                    continue;
+                }
+                LOG.trace("Respiratory rate at {}: {}", ts, respiratoryRate);
+                final GarminRespiratoryRateSample sample = new GarminRespiratoryRateSample();
+                sample.setTimestamp(ts * 1000L);
+                sample.setRespiratoryRate(respiratoryRate);
+                respiratoryRateSamples.add(sample);
             } else if (record instanceof FitEvent) {
                 final FitEvent event = (FitEvent) record;
                 if (event.getEvent() == null) {
@@ -247,6 +286,27 @@ public class FitImporter {
                 sample.setTimestamp(ts * 1000L);
                 sample.setValue(Math.round(hrvValue.getValue()));
                 hrvValueSamples.add(sample);
+            } else if (record instanceof FitMonitoringInfo) {
+                final FitMonitoringInfo monitoringInfo = (FitMonitoringInfo) record;
+                if (monitoringInfo.getRestingMetabolicRate() == null) {
+                    continue;
+                }
+                LOG.trace("Monitoring info at {}: {}", ts, record);
+                final GarminRestingMetabolicRateSample sample = new GarminRestingMetabolicRateSample();
+                sample.setTimestamp(ts * 1000L);
+                sample.setRestingMetabolicRate(monitoringInfo.getRestingMetabolicRate());
+                restingMetabolicRateSamples.add(sample);
+            } else if (record instanceof FitMonitoringHrData) {
+                final FitMonitoringHrData monitoringHrData = (FitMonitoringHrData) record;
+                if (monitoringHrData.getRestingHeartRate() == null) {
+                    LOG.warn("Resting HR at {} is null", ts);
+                    continue;
+                }
+                LOG.trace("Resting HR at {}: {}", ts, monitoringHrData.getRestingHeartRate());
+                final GarminHeartRateRestingSample sample = new GarminHeartRateRestingSample();
+                sample.setTimestamp(ts * 1000L);
+                sample.setHeartRate(monitoringHrData.getRestingHeartRate());
+                restingHrSamples.add(sample);
             } else {
                 LOG.trace("Unknown record: {}", record);
 
@@ -269,27 +329,45 @@ public class FitImporter {
             return;
         }
 
-        switch (fileId.getType()) {
-            case ACTIVITY:
-                persistWorkout(file);
-                break;
-            case MONITOR:
-                persistActivitySamples();
-                persistSpo2Samples();
-                persistStressSamples();
-                persistBodyEnergySamples();
-                break;
-            case SLEEP:
-                persistEvents();
-                persistSleepStageSamples();
-                processRawSleepSamples();
-                break;
-            case HRV_STATUS:
-                persistHrvSummarySamples();
-                persistHrvValueSamples();
-                break;
-            default:
-                LOG.warn("Unable to handle fit file of type {}", fileId.getType());
+        try (DBHandler handler = GBApplication.acquireDB()) {
+            final DaoSession session = handler.getDaoSession();
+
+            switch (fileId.getType()) {
+                case ACTIVITY:
+                    persistWorkout(file, session);
+                    break;
+                case MONITOR:
+                    persistActivitySamples(session);
+                    persistAbstractSamples(spo2samples, new GarminSpo2SampleProvider(gbDevice, session));
+                    persistAbstractSamples(respiratoryRateSamples, new GarminRespiratoryRateSampleProvider(gbDevice, session));
+                    persistAbstractSamples(restingHrSamples, new GarminHeartRateRestingSampleProvider(gbDevice, session));
+                    persistAbstractSamples(stressSamples, new GarminStressSampleProvider(gbDevice, session));
+                    persistAbstractSamples(bodyEnergySamples, new GarminBodyEnergySampleProvider(gbDevice, session));
+                    persistAbstractSamples(restingMetabolicRateSamples, new GarminRestingMetabolicRateSampleProvider(gbDevice, session));
+                    break;
+                case SLEEP:
+                    persistAbstractSamples(events, new GarminEventSampleProvider(gbDevice, session));
+                    persistAbstractSamples(sleepStatsSamples, new GarminSleepStatsSampleProvider(gbDevice, session));
+
+                    // We may have samples, but not sleep samples - #4048
+                    // 0 unmeasurable, 1 awake
+                    final boolean anySleepSample = sleepStageSamples.stream()
+                            .anyMatch(s -> s.getStage() != 0 && s.getStage() != 1);
+                    if (anySleepSample) {
+                        persistAbstractSamples(sleepStageSamples, new GarminSleepStageSampleProvider(gbDevice, session));
+                    }
+
+                    processRawSleepSamples(session);
+                    break;
+                case HRV_STATUS:
+                    persistAbstractSamples(hrvSummarySamples, new GarminHrvSummarySampleProvider(gbDevice, session));
+                    persistAbstractSamples(hrvValueSamples, new GarminHrvValueSampleProvider(gbDevice, session));
+                    break;
+                default:
+                    LOG.warn("Unable to handle fit file of type {}", fileId.getType());
+            }
+        } catch (final Exception e) {
+            GB.toast(context, "Error saving samples", Toast.LENGTH_LONG, GB.ERROR, e);
         }
 
         for (final Map.Entry<Integer, Integer> e : unknownRecords.entrySet()) {
@@ -297,14 +375,13 @@ public class FitImporter {
         }
     }
 
-    private void persistWorkout(final File file) {
+    private void persistWorkout(final File file, final DaoSession session) {
         LOG.debug("Persisting workout for {}", fileId);
 
         final BaseActivitySummary summary;
 
         // This ensures idempotency when re-processing
-        try (DBHandler dbHandler = GBApplication.acquireDB()) {
-            final DaoSession session = dbHandler.getDaoSession();
+        try {
             summary = ActivitySummaryParser.findOrCreateBaseActivitySummary(
                     session,
                     gbDevice,
@@ -319,8 +396,7 @@ public class FitImporter {
 
         summary.setRawDetailsPath(file.getAbsolutePath());
 
-        try (DBHandler dbHandler = GBApplication.acquireDB()) {
-            final DaoSession session = dbHandler.getDaoSession();
+        try {
             final Device device = DBHelper.getDevice(gbDevice, session);
             final User user = DBHelper.getUser(session);
 
@@ -338,10 +414,14 @@ public class FitImporter {
         stressSamples.clear();
         bodyEnergySamples.clear();
         spo2samples.clear();
+        respiratoryRateSamples.clear();
+        restingHrSamples.clear();
         events.clear();
+        sleepStatsSamples.clear();
         sleepStageSamples.clear();
         hrvSummarySamples.clear();
         hrvValueSamples.clear();
+        restingMetabolicRateSamples.clear();
         unknownRecords.clear();
         fitSleepDataInfo = null;
         fitSleepDataRawSamples.clear();
@@ -349,16 +429,19 @@ public class FitImporter {
         workoutParser.reset();
     }
 
-    private void persistActivitySamples() {
+    private void persistActivitySamples(final DaoSession session) {
         if (activitySamplesPerTimestamp.isEmpty()) {
             return;
         }
 
         final List<GarminActivitySample> activitySamples = new ArrayList<>(activitySamplesPerTimestamp.size());
+        final List<GarminIntensityMinutesSample> intensityMinutesSamples = new ArrayList<>(activitySamplesPerTimestamp.size());
 
-        // Garmin reports the cumulative steps per activity, but not always, so we need to keep
-        // track of the number of steps for each activity, and set the sum of all on the sample
+        // Garmin reports the cumulative data per activity, but not always, so we need to keep
+        // track of the amounts for each activity, and set the sum of all on the sample
         final Map<Integer, Long> stepsPerActivity = new HashMap<>();
+        final Map<Integer, Long> distancePerActivity = new HashMap<>();
+        final Map<Integer, Integer> caloriesPerActivity = new HashMap<>();
 
         final int THRESHOLD_NOT_WORN = 10 * 60; // 10 min gap between samples = not-worn
         int prevActivityKind = ActivityKind.UNKNOWN.getCode();
@@ -374,6 +457,9 @@ public class FitImporter {
                     sample.setRawKind(ts - prevTs > THRESHOLD_NOT_WORN ? ActivityKind.NOT_WORN.getCode() : prevActivityKind);
                     sample.setRawIntensity(ActivitySample.NOT_MEASURED);
                     sample.setSteps(ActivitySample.NOT_MEASURED);
+                    sample.setHeartRate(ActivitySample.NOT_MEASURED);
+                    sample.setDistanceCm(ActivitySample.NOT_MEASURED);
+                    sample.setActiveCalories(ActivitySample.NOT_MEASURED);
                     activitySamples.add(sample);
                 }
             }
@@ -386,8 +472,12 @@ public class FitImporter {
             sample.setRawIntensity(ActivitySample.NOT_MEASURED);
             sample.setSteps(ActivitySample.NOT_MEASURED);
             sample.setHeartRate(ActivitySample.NOT_MEASURED);
+            sample.setDistanceCm(ActivitySample.NOT_MEASURED);
+            sample.setActiveCalories(ActivitySample.NOT_MEASURED);
 
-            boolean hasSteps = false;
+            int minutesModerate = 0;
+            int minutesVigorous = 0;
+
             for (final FitMonitoring record : Objects.requireNonNull(records)) {
                 final Integer activityType = record.getComputedActivityType().orElse(ActivitySample.NOT_MEASURED);
 
@@ -399,23 +489,64 @@ public class FitImporter {
                 final Long steps = record.getCycles();
                 if (steps != null) {
                     stepsPerActivity.put(activityType, steps);
-                    hasSteps = true;
+                }
+
+                final Long distance = record.getDistance();
+                if (distance != null) {
+                    distancePerActivity.put(activityType, distance);
+                }
+
+                final Integer calories = record.getActiveCalories();
+                if (calories != null) {
+                    caloriesPerActivity.put(activityType, calories);
                 }
 
                 final Integer intensity = record.getComputedIntensity();
                 if (intensity != null) {
                     sample.setRawIntensity(intensity);
                 }
+
+                final Integer recordMinutesModerate = record.getModerateActivityMinutes();
+                if (recordMinutesModerate != null) {
+                    minutesModerate += recordMinutesModerate;
+                }
+
+                final Integer recordMinutesVigorous = record.getVigorousActivityMinutes();
+                if (recordMinutesVigorous != null) {
+                    minutesVigorous += recordMinutesVigorous;
+                }
             }
-            if (hasSteps) {
+            if (!stepsPerActivity.isEmpty()) {
                 int sumSteps = 0;
                 for (final Long steps : stepsPerActivity.values()) {
                     sumSteps += steps;
                 }
                 sample.setSteps(sumSteps);
             }
+            if (!distancePerActivity.isEmpty()) {
+                int sumDistance = 0;
+                for (final Long distance : distancePerActivity.values()) {
+                    sumDistance += distance;
+                }
+                sample.setDistanceCm(sumDistance);
+            }
+            if (!caloriesPerActivity.isEmpty()) {
+                int sumCalories = 0;
+                for (final Integer calories : caloriesPerActivity.values()) {
+                    sumCalories += calories;
+                }
+                sample.setActiveCalories(sumCalories);
+            }
 
             activitySamples.add(sample);
+
+            if (minutesModerate != 0 || minutesVigorous != 0) {
+                final GarminIntensityMinutesSample intensityMinutesSample = new GarminIntensityMinutesSample();
+                intensityMinutesSample.setTimestamp(ts * 1000L);
+                intensityMinutesSample.setModerate(minutesModerate);
+                intensityMinutesSample.setVigorous(minutesVigorous);
+                intensityMinutesSamples.add(intensityMinutesSample);
+            }
 
             prevActivityKind = sample.getRawKind();
             prevTs = (int) ts;
@@ -423,9 +554,7 @@ public class FitImporter {
 
         LOG.debug("Will persist {} activity samples", activitySamples.size());
 
-        try (DBHandler handler = GBApplication.acquireDB()) {
-            final DaoSession session = handler.getDaoSession();
-
+        try {
             final Device device = DBHelper.getDevice(gbDevice, session);
             final User user = DBHelper.getUser(session);
 
@@ -440,61 +569,11 @@ public class FitImporter {
         } catch (final Exception e) {
             GB.toast(context, "Error saving activity samples", Toast.LENGTH_LONG, GB.ERROR, e);
         }
-    }
 
-    private void persistEvents() {
-        if (events.isEmpty()) {
-            return;
-        }
-
-        LOG.debug("Will persist {} event samples", events.size());
-
-        try (DBHandler handler = GBApplication.acquireDB()) {
-            final DaoSession session = handler.getDaoSession();
-
-            final Device device = DBHelper.getDevice(gbDevice, session);
-            final User user = DBHelper.getUser(session);
-
-            final GarminEventSampleProvider sampleProvider = new GarminEventSampleProvider(gbDevice, session);
-
-            for (final GarminEventSample sample : events) {
-                sample.setDevice(device);
-                sample.setUser(user);
-            }
-
-            sampleProvider.addSamples(events);
+        try {
+            persistAbstractSamples(intensityMinutesSamples, new GarminIntensityMinutesSampleProvider(gbDevice, session));
         } catch (final Exception e) {
-            GB.toast(context, "Error saving event samples", Toast.LENGTH_LONG, GB.ERROR, e);
-        }
-    }
-
-    private void persistSleepStageSamples() {
-        // We may have samples, but not sleep samples - #4048
-        // 0 unmeasurable, 1 awake
-        final boolean anySleepSample = sleepStageSamples.stream()
-                .anyMatch(s -> s.getStage() != 0 && s.getStage() != 1);
-        if (!anySleepSample) {
-            return;
-        }
-
-        LOG.debug("Will persist {} sleep stage samples", sleepStageSamples.size());
-
-        try (DBHandler handler = GBApplication.acquireDB()) {
-            final DaoSession session = handler.getDaoSession();
-
-            final Device device = DBHelper.getDevice(gbDevice, session);
-            final User user = DBHelper.getUser(session);
-
-            final GarminSleepStageSampleProvider sampleProvider = new GarminSleepStageSampleProvider(gbDevice, session);
-
-            for (final GarminSleepStageSample sample : sleepStageSamples) {
-                sample.setDevice(device);
-                sample.setUser(user);
-            }
-
-            sampleProvider.addSamples(sleepStageSamples);
-        } catch (final Exception e) {
-            GB.toast(context, "Error saving sleep stage samples", Toast.LENGTH_LONG, GB.ERROR, e);
+            GB.toast(context, "Error saving intensity minutes samples", Toast.LENGTH_LONG, GB.ERROR, e);
         }
     }
 
@@ -504,7 +583,7 @@ public class FitImporter {
      * but we fake light sleep for the duration of the raw sleep samples, in order to have some data
      * at all.
      */
-    private void processRawSleepSamples() {
+    private void processRawSleepSamples(final DaoSession session) {
         if (fitSleepDataRawSamples.isEmpty()) {
             return;
         }
@@ -522,9 +601,7 @@ public class FitImporter {
         LOG.debug("Got {} raw sleep samples - faking sleep events from {} to {}", fitSleepDataRawSamples.size(), asleepTimeMillis, wakeTimeMillis);
 
         // We only need to fake sleep start and end times, the sample provider will take care of the rest
-        try (DBHandler handler = GBApplication.acquireDB()) {
-            final DaoSession session = handler.getDaoSession();
-
+        try {
             final Device device = DBHelper.getDevice(gbDevice, session);
             final User user = DBHelper.getUser(session);
 
@@ -553,133 +630,32 @@ public class FitImporter {
         }
     }
 
-    private void persistHrvSummarySamples() {
-        if (hrvSummarySamples.isEmpty()) {
+    private <T extends AbstractTimeSample> void persistAbstractSamples(final List<T> samples,
+                                                                       final AbstractTimeSampleProvider<T> sampleProvider) {
+        if (samples.isEmpty()) {
             return;
         }
 
-        LOG.debug("Will persist {} HRV summary samples", hrvSummarySamples.size());
+        LOG.debug(
+                "Will persist {} {} samples",
+                samples.size(),
+                sampleProvider.getClass().getSimpleName().replace("Garmin", "").replace("SampleProvider", "")
+        );
 
-        try (DBHandler handler = GBApplication.acquireDB()) {
-            final DaoSession session = handler.getDaoSession();
+        try {
+            final DaoSession session = sampleProvider.getSession();
 
             final Device device = DBHelper.getDevice(gbDevice, session);
             final User user = DBHelper.getUser(session);
 
-            final GarminHrvSummarySampleProvider sampleProvider = new GarminHrvSummarySampleProvider(gbDevice, session);
-
-            for (final GarminHrvSummarySample sample : hrvSummarySamples) {
+            for (final T sample : samples) {
                 sample.setDevice(device);
                 sample.setUser(user);
             }
 
-            sampleProvider.addSamples(hrvSummarySamples);
+            sampleProvider.addSamples(samples);
         } catch (final Exception e) {
-            GB.toast(context, "Error saving HRV summary samples", Toast.LENGTH_LONG, GB.ERROR, e);
-        }
-    }
-
-    private void persistHrvValueSamples() {
-        if (hrvValueSamples.isEmpty()) {
-            return;
-        }
-
-        LOG.debug("Will persist {} HRV value samples", hrvValueSamples.size());
-
-        try (DBHandler handler = GBApplication.acquireDB()) {
-            final DaoSession session = handler.getDaoSession();
-
-            final Device device = DBHelper.getDevice(gbDevice, session);
-            final User user = DBHelper.getUser(session);
-
-            final GarminHrvValueSampleProvider sampleProvider = new GarminHrvValueSampleProvider(gbDevice, session);
-
-            for (final GarminHrvValueSample sample : hrvValueSamples) {
-                sample.setDevice(device);
-                sample.setUser(user);
-            }
-
-            sampleProvider.addSamples(hrvValueSamples);
-        } catch (final Exception e) {
-            GB.toast(context, "Error saving HRV value samples", Toast.LENGTH_LONG, GB.ERROR, e);
-        }
-    }
-
-    private void persistSpo2Samples() {
-        if (spo2samples.isEmpty()) {
-            return;
-        }
-
-        LOG.debug("Will persist {} spo2 samples", stressSamples.size());
-
-        try (DBHandler handler = GBApplication.acquireDB()) {
-            final DaoSession session = handler.getDaoSession();
-
-            final Device device = DBHelper.getDevice(gbDevice, session);
-            final User user = DBHelper.getUser(session);
-
-            final GarminSpo2SampleProvider sampleProvider = new GarminSpo2SampleProvider(gbDevice, session);
-
-            for (final GarminSpo2Sample sample : spo2samples) {
-                sample.setDevice(device);
-                sample.setUser(user);
-            }
-
-            sampleProvider.addSamples(spo2samples);
-        } catch (final Exception e) {
-            GB.toast(context, "Error saving spo2 samples", Toast.LENGTH_LONG, GB.ERROR, e);
-        }
-    }
-
-    private void persistStressSamples() {
-        if (stressSamples.isEmpty()) {
-            return;
-        }
-
-        LOG.debug("Will persist {} stress samples", stressSamples.size());
-
-        try (DBHandler handler = GBApplication.acquireDB()) {
-            final DaoSession session = handler.getDaoSession();
-
-            final Device device = DBHelper.getDevice(gbDevice, session);
-            final User user = DBHelper.getUser(session);
-
-            final GarminStressSampleProvider sampleProvider = new GarminStressSampleProvider(gbDevice, session);
-
-            for (final GarminStressSample sample : stressSamples) {
-                sample.setDevice(device);
-                sample.setUser(user);
-            }
-
-            sampleProvider.addSamples(stressSamples);
-        } catch (final Exception e) {
-            GB.toast(context, "Error saving stress samples", Toast.LENGTH_LONG, GB.ERROR, e);
-        }
-    }
-
-    private void persistBodyEnergySamples() {
-        if (bodyEnergySamples.isEmpty()) {
-            return;
-        }
-
-        LOG.debug("Will persist {} body energy samples", bodyEnergySamples.size());
-
-        try (DBHandler handler = GBApplication.acquireDB()) {
-            final DaoSession session = handler.getDaoSession();
-
-            final Device device = DBHelper.getDevice(gbDevice, session);
-            final User user = DBHelper.getUser(session);
-
-            final GarminBodyEnergySampleProvider sampleProvider = new GarminBodyEnergySampleProvider(gbDevice, session);
-
-            for (final GarminBodyEnergySample sample : bodyEnergySamples) {
-                sample.setDevice(device);
-                sample.setUser(user);
-            }
-
-            sampleProvider.addSamples(bodyEnergySamples);
-        } catch (final Exception e) {
-            GB.toast(context, "Error saving body energy samples", Toast.LENGTH_LONG, GB.ERROR, e);
+            GB.toast(context, "Error saving samples", Toast.LENGTH_LONG, GB.ERROR, e);
         }
     }
 }

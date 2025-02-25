@@ -25,9 +25,11 @@ package nodomain.freeyourgadget.gadgetbridge.externalevents;
 import android.app.Notification;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
@@ -38,6 +40,7 @@ import android.os.Handler;
 import android.os.PowerManager;
 import android.os.Process;
 import android.os.UserHandle;
+import android.provider.MediaStore;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 
@@ -51,6 +54,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -122,6 +129,17 @@ public class NotificationListener extends NotificationListenerService {
 
     public static final ArrayList<String> notificationStack = new ArrayList<>();
     private static final ArrayList<Integer> notificationsActive = new ArrayList<>();
+
+    private static final Set<String> supportedPictureMimeTypes = new HashSet<String>() {{
+        add("image/"); //for im.vector.app
+        add("image/jpeg");
+        add("image/png");
+        add("image/gif");
+        add("image/bmp");
+        add("image/webp");
+    }};
+
+    private File notificationPictureCacheDirectory;
 
     private long activeCallPostTime;
     private int mLastCallCommand = CallSpec.CALL_UNDEFINED;
@@ -244,6 +262,8 @@ public class NotificationListener extends NotificationListenerService {
         filterLocal.addAction(ACTION_MUTE);
         filterLocal.addAction(ACTION_REPLY);
         LocalBroadcastManager.getInstance(this).registerReceiver(mReceiver, filterLocal);
+        createNotificationPictureCacheDirectory();
+        cleanUpNotificationPictureProvider();
     }
 
     @Override
@@ -251,6 +271,7 @@ public class NotificationListener extends NotificationListenerService {
         LocalBroadcastManager.getInstance(this).unregisterReceiver(mReceiver);
         notificationStack.clear();
         notificationsActive.clear();
+        cleanUpNotificationPictureProvider();
         super.onDestroy();
     }
 
@@ -455,10 +476,14 @@ public class NotificationListener extends NotificationListenerService {
         mPackageLookup.add(notificationSpec.getId(), sbn.getPackageName()); // for MUTE
 
         notificationBurstPrevention.put(source, curTime);
-        if (0 != notification.when) {
-            notificationOldRepeatPrevention.put(source, notification.when);
+        if (notification.when == 0) {
+            LOG.info("This app might show old/duplicate notifications. notification.when is 0 for {}", source);
+        } else if ((notification.when - System.currentTimeMillis()) > 30_000L) {
+            // #4327 - Some apps such as outlook send reminder notifications in the future
+            // If we add them to the oldRepeatPrevention, they never show up again
+            LOG.info("This app might show old/duplicate notifications. notification.when is in the future for {}", source);
         } else {
-            LOG.info("This app might show old/duplicate notifications. notification.when is 0 for " + source);
+            notificationOldRepeatPrevention.put(source, notification.when);
         }
         notificationsActive.add(notificationSpec.getId());
         // NOTE for future developers: this call goes to implementations of DeviceService.onNotification(NotificationSpec), like in GBDeviceService
@@ -670,6 +695,41 @@ public class NotificationListener extends NotificationListenerService {
             notificationSpec.body = sanitizeUnicode(contentCS.toString());
         }
 
+        NotificationCompat.MessagingStyle messagingStyle = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(notification);
+        if (messagingStyle != null) {
+            List<NotificationCompat.MessagingStyle.Message> messages = messagingStyle.getMessages();
+            if (!messages.isEmpty()) {
+                // Get the last message (assumed to be the most recent)
+                NotificationCompat.MessagingStyle.Message lastMessage = messages.get(messages.size() - 1);
+
+                if (supportedPictureMimeTypes.contains(lastMessage.getDataMimeType())) {
+                    ContentResolver contentResolver = getContentResolver();
+                    try (Cursor cursor = contentResolver.query(lastMessage.getDataUri(), null, null, null, null)) {
+                        if (cursor != null && cursor.moveToFirst()) {
+                            int dataIndex = cursor.getColumnIndex(MediaStore.Images.Media.DATA);
+                            notificationSpec.picturePath = cursor.getString(dataIndex);
+                        }
+                    } catch (Exception e) {
+                        LOG.error(e.getMessage());
+                    }
+                }
+            }
+        }
+
+        if (extras.containsKey(NotificationCompat.EXTRA_PICTURE)) {
+            final Bitmap bmp = (Bitmap) extras.get(NotificationCompat.EXTRA_PICTURE);
+            File pictureFile = new File(this.notificationPictureCacheDirectory, String.valueOf(notificationSpec.getId()));
+
+            try (FileOutputStream fos = new FileOutputStream(pictureFile)) {
+                bmp.compress(Bitmap.CompressFormat.PNG, 100, fos);
+                notificationSpec.picturePath = pictureFile.getAbsolutePath();
+            } catch (IOException e) {
+                LOG.error("Failed to save picture to notification cache: {}", e.getMessage());
+            } finally {
+                bmp.recycle();
+            }
+        }
+
         if (notificationSpec.type == NotificationType.COL_REMINDER
                 && notificationSpec.body == null
                 && notificationSpec.title != null) {
@@ -788,6 +848,7 @@ public class NotificationListener extends NotificationListenerService {
         for (int notificationId : notificationsActive) {
             if (!activeNotificationsIds.contains(notificationId)) {
                 notificationsToRemove.add(notificationId);
+                deleteNotificationPicture(notificationId);
             }
         }
 
@@ -811,12 +872,34 @@ public class NotificationListener extends NotificationListenerService {
         }
     }
 
+    private void deleteNotificationPicture(int notificationId) {
+        File pictureFile = new File(this.notificationPictureCacheDirectory, String.valueOf(notificationId));
+        if (pictureFile.exists())
+            pictureFile.delete();
+    }
+
+    private void cleanUpNotificationPictureProvider() {
+        File[] pictureFiles = this.notificationPictureCacheDirectory.listFiles();
+        if (pictureFiles == null)
+            return;
+
+        for (File pictureFile : pictureFiles) {
+            pictureFile.delete();
+        }
+    }
+
+    private void createNotificationPictureCacheDirectory() {
+        final File cacheDir = getApplicationContext().getExternalCacheDir();
+        this.notificationPictureCacheDirectory = new File(cacheDir, "notification-pictures");
+        this.notificationPictureCacheDirectory.mkdir();
+    }
     private void logNotification(StatusBarNotification sbn, boolean posted) {
         LOG.debug(
-                "Notification {} {}: packageName={}, priority={}, category={}",
+                "Notification {} {}: packageName={}, when={}, priority={}, category={}",
                 sbn.getId(),
                 posted ? "posted" : "removed",
                 sbn.getPackageName(),
+                sbn.getNotification().when,
                 sbn.getNotification().priority,
                 sbn.getNotification().category
         );

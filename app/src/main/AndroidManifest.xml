@@ -151,6 +151,14 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".activities.welcome.WelcomeActivity"
+            android:label="@string/first_start_welcome_title"
+            android:parentActivityName=".activities.ControlCenterv2" />
+        <activity
+            android:name=".activities.PermissionsActivity"
+            android:label="@string/first_start_permissions_title"
+            android:parentActivityName=".activities.ControlCenterv2" />
+        <activity
             android:name=".activities.SettingsActivity"
             android:label="@string/title_activity_settings"
             android:parentActivityName=".activities.ControlCenterv2" />
@@ -200,6 +208,10 @@
             android:launchMode="singleTop"
             android:parentActivityName=".activities.ControlCenterv2" />
         <activity
+            android:name=".activities.musicmanager.MusicManagerActivity"
+            android:label="@string/title_activity_musicmanager"
+            android:parentActivityName=".activities.SettingsActivity" />
+        <activity
             android:name=".activities.AppBlacklistActivity"
             android:label="@string/title_activity_notification_management"
             android:parentActivityName=".activities.SettingsActivity" />
@@ -210,6 +222,10 @@
         <activity
             android:name=".devices.vesc.VescControlActivity"
             android:label="@string/devicetype_vesc"
+            android:parentActivityName=".activities.ControlCenterv2" />
+        <activity
+            android:name=".devices.idasen.IdasenControlActivity"
+            android:label="@string/devicetype_idasen"
             android:parentActivityName=".activities.ControlCenterv2" />
         <activity
             android:name=".activities.FwAppInstallerActivity"
@@ -850,6 +866,11 @@
 
         <activity
             android:name=".devices.supercars.ControlActivity"
+            android:exported="true" />
+
+        <activity
+            android:name=".devices.marstek.SolarEquipmentStatusActivity"
+            android:label="Solar Equipment Status"
             android:exported="true" />
 
         <activity

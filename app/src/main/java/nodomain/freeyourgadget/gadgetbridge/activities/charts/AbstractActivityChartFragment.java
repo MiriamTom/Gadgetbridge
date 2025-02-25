@@ -1,4 +1,4 @@
-/*  Copyright (C) 2023-2024 Daniel Dakhno, José Rebelo
+/*  Copyright (C) 2023-2024 Daniel Dakhno, José Rebelo, a0z
 
     This file is part of Gadgetbridge.
 
@@ -27,10 +27,10 @@ import com.github.mikephil.charting.data.LineDataSet;
 import com.github.mikephil.charting.formatter.ValueFormatter;
 import com.github.mikephil.charting.interfaces.datasets.ILineDataSet;
 
+import org.apache.commons.lang3.NotImplementedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
@@ -180,14 +180,28 @@ public abstract class AbstractActivityChartFragment<D extends ChartsData> extend
         return provider.getAllActivitySamples(tsFrom, tsTo);
     }
 
+    protected List<? extends ActivitySample> getAllSamplesHighRes(DBHandler db, GBDevice device, int tsFrom, int tsTo) {
+        SampleProvider<? extends ActivitySample> provider = getProvider(db, device);
+        // Only retrieve if the provider signals it has high res data, otherwise it is useless
+        if (provider.hasHighResData())
+            return provider.getAllActivitySamplesHighRes(tsFrom, tsTo);
+        return null;
+    }
+
     protected List<? extends AbstractActivitySample> getActivitySamples(DBHandler db, GBDevice device, int tsFrom, int tsTo) {
         SampleProvider<? extends AbstractActivitySample> provider = getProvider(db, device);
         return provider.getActivitySamples(tsFrom, tsTo);
     }
 
     public DefaultChartsData<LineData> refresh(GBDevice gbDevice, List<? extends ActivitySample> samples) {
+        // If there is no high res samples, all the samples are high res samples
+        return refresh(gbDevice, samples, samples);
+    }
+
+    public DefaultChartsData<LineData> refresh(GBDevice gbDevice, List<? extends ActivitySample> samples, List<? extends ActivitySample> highResSamples) {
         TimestampTranslation tsTranslation = new TimestampTranslation();
         LOG.info("{}: number of samples: {}", getTitle(), samples.size());
+        LOG.info("{}: number of high res samples: {}", getTitle(), highResSamples.size());
         LineData lineData;
 
         if (samples.isEmpty()) {
@@ -204,12 +218,6 @@ public abstract class AbstractActivityChartFragment<D extends ChartsData> extend
         for (int i = 0; i < 6; i++) {
             entries.add(new ArrayList<>());
         }
-
-        boolean hr = supportsHeartrate(gbDevice);
-        List<Entry> heartrateEntries = hr ? new ArrayList<Entry>(numEntries) : null;
-
-        int lastHrSampleIndex = -1;
-        HeartRateUtils heartRateUtilsInstance = HeartRateUtils.getInstance();
 
         for (int i = 0; i < numEntries; i++) {
             ActivitySample sample = samples.get(i);
@@ -257,17 +265,38 @@ public abstract class AbstractActivityChartFragment<D extends ChartsData> extend
             }
             entries.get(index).add(createLineEntry(value, ts));
 
-            // heart rate line graph
-            if (hr && type != ActivityKind.NOT_WORN && heartRateUtilsInstance.isValidHeartRateValue(sample.getHeartRate())) {
-                if (lastHrSampleIndex > -1 && ts - lastHrSampleIndex > 1800*HeartRateUtils.MAX_HR_MEASUREMENTS_GAP_MINUTES) {
-                    heartrateEntries.add(createLineEntry(0, lastHrSampleIndex + 1));
-                    heartrateEntries.add(createLineEntry(0, ts - 1));
-                }
-                heartrateEntries.add(createLineEntry(sample.getHeartRate(), ts));
-                lastHrSampleIndex = ts;
-            }
             last_type = type;
             last_value = value;
+        }
+
+        boolean hr = supportsHeartrate(gbDevice);
+        final List<Entry> heartRateLineEntries = new ArrayList<>();
+        final List<ILineDataSet> heartRateDataSets = new ArrayList<>();
+        int lastTsShorten = 0;
+        HeartRateUtils heartRateUtilsInstance = HeartRateUtils.getInstance();
+
+        // Currently only for HR
+        if (hr) {
+            for (ActivitySample sample : highResSamples) {
+                if (sample.getKind() != ActivityKind.NOT_WORN && heartRateUtilsInstance.isValidHeartRateValue(sample.getHeartRate())) {
+                    int tsShorten = tsTranslation.shorten(sample.getTimestamp());
+                    if (lastTsShorten == 0 || (tsShorten - lastTsShorten) <= 60 * HeartRateUtils.MAX_HR_MEASUREMENTS_GAP_MINUTES) {
+                        heartRateLineEntries.add(new Entry(tsShorten, sample.getHeartRate()));
+                    } else {
+                        if (!heartRateLineEntries.isEmpty()) {
+                            List<Entry> clone = new ArrayList<>(heartRateLineEntries.size());
+                            clone.addAll(heartRateLineEntries);
+                            heartRateDataSets.add(createHeartrateSet(clone, "Heart Rate"));
+                            heartRateLineEntries.clear();
+                        }
+                    }
+                    lastTsShorten = tsShorten;
+                    heartRateLineEntries.add(new Entry(tsShorten, sample.getHeartRate()));
+                }
+            }
+        }
+        if (!heartRateLineEntries.isEmpty()) {
+            heartRateDataSets.add(createHeartrateSet(heartRateLineEntries, "Heart Rate"));
         }
 
         // convert Entry Lists to Datasets
@@ -296,9 +325,8 @@ public abstract class AbstractActivityChartFragment<D extends ChartsData> extend
                 entries.get(getIndexOfActivity(ActivityKind.AWAKE_SLEEP)), akAwakeSleep.color, "Awake Sleep"
             ));
         }
-        if (hr && !heartrateEntries.isEmpty()) {
-            LineDataSet heartrateSet = createHeartrateSet(heartrateEntries, "Heart Rate");
-            lineDataSets.add(heartrateSet);
+        if (hr && !heartRateDataSets.isEmpty()) {
+            lineDataSets.addAll(heartRateDataSets);
         }
 
         lineData = new LineData(lineDataSets);
@@ -325,17 +353,11 @@ public abstract class AbstractActivityChartFragment<D extends ChartsData> extend
     protected LineDataSet createDataSet(List<Entry> values, Integer color, String label) {
         LineDataSet set1 = new LineDataSet(values, label);
         set1.setColor(color);
-//        set1.setDrawCubic(true);
-//        set1.setCubicIntensity(0.2f);
         set1.setDrawFilled(true);
         set1.setDrawCircles(false);
-//        set1.setLineWidth(2f);
-//        set1.setCircleSize(5f);
         set1.setFillColor(color);
         set1.setFillAlpha(255);
         set1.setDrawValues(false);
-//        set1.setHighLightColor(Color.rgb(128, 0, 255));
-//        set1.setColor(Color.rgb(89, 178, 44));
         set1.setValueTextColor(CHART_TEXT_COLOR);
         set1.setAxisDependency(YAxis.AxisDependency.LEFT);
         return set1;
@@ -345,17 +367,9 @@ public abstract class AbstractActivityChartFragment<D extends ChartsData> extend
         LineDataSet set1 = new LineDataSet(values, label);
         set1.setLineWidth(2.2f);
         set1.setColor(HEARTRATE_COLOR);
-//        set1.setDrawCubic(true);
         set1.setMode(LineDataSet.Mode.HORIZONTAL_BEZIER);
         set1.setCubicIntensity(0.1f);
         set1.setDrawCircles(false);
-//        set1.setCircleRadius(2f);
-//        set1.setDrawFilled(true);
-//        set1.setColor(getResources().getColor(android.R.color.background_light));
-//        set1.setCircleColor(HEARTRATE_COLOR);
-//        set1.setFillColor(ColorTemplate.getHoloBlue());
-//        set1.setHighLightColor(Color.rgb(128, 0, 255));
-//        set1.setColor(Color.rgb(89, 178, 44));
         set1.setDrawValues(true);
         set1.setValueTextColor(CHART_TEXT_COLOR);
         set1.setAxisDependency(YAxis.AxisDependency.RIGHT);
@@ -364,14 +378,15 @@ public abstract class AbstractActivityChartFragment<D extends ChartsData> extend
 
     /**
      * Implement this to supply the samples to be displayed.
-     *
-     * @param db
-     * @param device
-     * @param tsFrom
-     * @param tsTo
-     * @return
      */
     protected abstract List<? extends ActivitySample> getSamples(DBHandler db, GBDevice device, int tsFrom, int tsTo);
+
+    /**
+     * Implement this to supply high resolution data
+     */
+    protected List<? extends ActivitySample> getSamplesHighRes(DBHandler db, GBDevice device, int tsFrom, int tsTo) {
+        throw new NotImplementedException("High resolution samples have not been implemented for this chart.");
+    }
 
     protected List<? extends ActivitySample> getSamples(DBHandler db, GBDevice device) {
         int tsStart = getTSStart();
@@ -386,6 +401,12 @@ public abstract class AbstractActivityChartFragment<D extends ChartsData> extend
 //        }
 //        return samples2;
         return samples;
+    }
+
+    protected List<? extends ActivitySample> getSamplesHighRes(DBHandler db, GBDevice device) {
+        int tsStart = getTSStart();
+        int tsEnd = getTSEnd();
+        return getSamplesHighRes(db, device, tsStart, tsEnd);
     }
 
     protected List<? extends ActivitySample> getSamplesofSleep(DBHandler db, GBDevice device) {

@@ -23,12 +23,15 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 
+import androidx.annotation.NonNull;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Calendar;
+import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.UUID;
 
@@ -55,14 +58,15 @@ import nodomain.freeyourgadget.gadgetbridge.service.btle.actions.SetDeviceStateA
 import nodomain.freeyourgadget.gadgetbridge.service.btle.profiles.IntentListener;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.profiles.deviceinfo.DeviceInfo;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.profiles.deviceinfo.DeviceInfoProfile;
+import nodomain.freeyourgadget.gadgetbridge.service.serial.GBDeviceProtocol;
+import nodomain.freeyourgadget.gadgetbridge.util.DateTimeUtils;
 import nodomain.freeyourgadget.gadgetbridge.util.GB;
 import nodomain.freeyourgadget.gadgetbridge.util.Prefs;
 import nodomain.freeyourgadget.gadgetbridge.util.StringUtils;
 
 public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
     private static final Logger LOG = LoggerFactory.getLogger(ColmiR0xDeviceSupport.class);
-    Handler backgroundTasksHandler = new Handler(Looper.getMainLooper());
-    Runnable backgroundTask;
+    private final Handler backgroundTasksHandler = new Handler(Looper.getMainLooper());
 
     private final DeviceInfoProfile<ColmiR0xDeviceSupport> deviceInfoProfile;
     private String cachedFirmwareVersion = null;
@@ -90,22 +94,11 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
         deviceInfoProfile = new DeviceInfoProfile<>(this);
         deviceInfoProfile.addListener(mListener);
         addSupportedProfile(deviceInfoProfile);
-
-//        try (DBHandler db = GBApplication.acquireDB()) {
-//            db.getDatabase().execSQL("DROP TABLE IF EXISTS 'COLMI_ACTIVITY_SAMPLE'");
-//            db.getDatabase().execSQL("DROP TABLE IF EXISTS 'COLMI_HEART_RATE_SAMPLE'");
-//            db.getDatabase().execSQL("DROP TABLE IF EXISTS 'COLMI_SPO2_SAMPLE'");
-//            db.getDatabase().execSQL("DROP TABLE IF EXISTS 'COLMI_STRESS_SAMPLE'");
-//        } catch (Exception e) {
-//            LOG.error("Error acquiring database", e);
-//        }
     }
 
     @Override
     public void dispose() {
-        if (backgroundTasksHandler != null) {
-            backgroundTasksHandler.removeCallbacks(backgroundTask);
-        }
+        backgroundTasksHandler.removeCallbacksAndMessages(null);
 
         super.dispose();
     }
@@ -127,7 +120,7 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
     }
 
     private void handleDeviceInfo(DeviceInfo info) {
-        LOG.debug("Device info: " + info);
+        LOG.debug("Device info: {}", info);
 
         GBDeviceEventVersionInfo versionCmd = new GBDeviceEventVersionInfo();
         versionCmd.hwVersion = info.getHardwareRevision();
@@ -155,13 +148,8 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
         builder.notify(getCharacteristic(ColmiR0xConstants.CHARACTERISTIC_NOTIFY_V2), true);
 
         // Delay initialization with 2 seconds to give the ring time to settle
-        backgroundTask = new Runnable() {
-            @Override
-            public void run() {
-                postConnectInitialization();
-            }
-        };
-        backgroundTasksHandler.postDelayed(backgroundTask, 2000);
+        backgroundTasksHandler.removeCallbacksAndMessages(null);
+        backgroundTasksHandler.postDelayed(this::postConnectInitialization, 2000);
 
         return builder;
     }
@@ -194,9 +182,7 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
                     int levelResponse = value[1];
                     boolean charging = value[2] == 1;
                     LOG.info("Received battery level response: {}% (charging: {})", levelResponse, charging);
-                    GBDeviceEventBatteryInfo batteryEvent = new GBDeviceEventBatteryInfo();
-                    batteryEvent.level = levelResponse;
-                    batteryEvent.state = charging ? BatteryState.BATTERY_CHARGING : BatteryState.BATTERY_NORMAL;
+                    GBDeviceEventBatteryInfo batteryEvent = createDeviceBatteryInfoEvent(levelResponse, charging);
                     evaluateGBDeviceEvent(batteryEvent);
                     break;
                 case ColmiR0xConstants.CMD_PHONE_NAME:
@@ -216,10 +202,15 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
                         packetsTotalNr = value[2];
                         LOG.info("HR history packet {} out of total {}", hrPacketNr, packetsTotalNr);
                     } else {
+                        LOG.info("HR history packet {} out of total {} (data for {}:00-{}:00)", hrPacketNr, packetsTotalNr, hrPacketNr-1, hrPacketNr);
                         Calendar sampleCal = (Calendar) syncingDay.clone();
                         int startValue = hrPacketNr == 1 ? 6 : 2;  // packet 1 contains the sync-from timestamp in bytes 2-5
                         int minutesInPreviousPackets = 0;
-                        if (hrPacketNr > 1) {
+                        if (hrPacketNr == 1) {
+                            int timestamp = BLETypeConversions.toUint32(value[2], value[3], value[4], value[5]);
+                            Date timestampDate = DateTimeUtils.parseTimeStamp(timestamp);
+                            LOG.info("Receiving HR history sequence with timestamp {}", DateTimeUtils.formatIso8601UTC(timestampDate));
+                        } else {
                             minutesInPreviousPackets = 9 * 5;  // packet 1
                             minutesInPreviousPackets += (hrPacketNr - 2) * 13 * 5;
                         }
@@ -229,6 +220,7 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
                                 int minuteOfDay = minutesInPreviousPackets + (i - startValue) * 5;
                                 sampleCal.set(Calendar.HOUR_OF_DAY, minuteOfDay / 60);
                                 sampleCal.set(Calendar.MINUTE, minuteOfDay % 60);
+                                sampleCal.set(Calendar.SECOND, 0);
                                 LOG.info("Value {} is {} bpm, time of day is {}", i, value[i] & 0xff, sampleCal.getTime());
                                 // Build sample object and save in database
                                 try (DBHandler db = GBApplication.acquireDB()) {
@@ -246,7 +238,6 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
                                 }
                             }
                         }
-                        LOG.info("HR history packet {}", hrPacketNr);
                         if (hrPacketNr == packetsTotalNr - 1) {
                             getDevice().unsetBusyTask();
                             getDevice().sendDeviceUpdateIntent(getContext());
@@ -276,6 +267,9 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
                 case ColmiR0xConstants.CMD_AUTO_STRESS_PREF:
                     ColmiR0xPacketHandler.stressSettings(this, value);
                     break;
+                case ColmiR0xConstants.CMD_AUTO_HRV_PREF:
+                    ColmiR0xPacketHandler.hrvSettings(this, value);
+                    break;
                 case ColmiR0xConstants.CMD_SYNC_STRESS:
                     ColmiR0xPacketHandler.historicalStress(getDevice(), getContext(), value);
                     if (!getDevice().isBusy()) {
@@ -291,6 +285,18 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
                         } else {
                             daysAgo = 0;
                             fetchHistoryHR();
+                        }
+                    }
+                    break;
+                case ColmiR0xConstants.CMD_SYNC_HRV:
+                    getDevice().setBusyTask(getContext().getString(R.string.busy_task_fetch_hrv_data));
+                    ColmiR0xPacketHandler.historicalHRV(getDevice(), getContext(), value, daysAgo);
+                    if (!getDevice().isBusy()) {
+                        if (daysAgo < 6) {
+                            daysAgo++;
+                            fetchHistoryHRV();
+                        } else {
+                            fetchRecordedDataFinished();
                         }
                     }
                     break;
@@ -313,10 +319,9 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
                             break;
                         case ColmiR0xConstants.NOTIFICATION_BATTERY_LEVEL:
                             int levelNotif = value[2];
-                            LOG.info("Received battery level notification: {}%", levelNotif);
-                            GBDeviceEventBatteryInfo batteryNotifEvent = new GBDeviceEventBatteryInfo();
-                            batteryNotifEvent.state = BatteryState.BATTERY_NORMAL;
-                            batteryNotifEvent.level = levelNotif;
+                            charging = value[3] == 1;
+                            LOG.info("Received battery level notification: {}% (charging: {})", levelNotif, charging);
+                            GBDeviceEventBatteryInfo batteryNotifEvent = createDeviceBatteryInfoEvent(levelNotif, charging);
                             evaluateGBDeviceEvent(batteryNotifEvent);
                             break;
                         case ColmiR0xConstants.NOTIFICATION_LIVE_ACTIVITY:
@@ -336,6 +341,7 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
             // Big data responses can arrive in multiple packets that need to be concatenated
             if (bigDataPacket != null) {
                 LOG.debug("Received {} bytes on big data characteristic while waiting for follow-up data", value.length);
+                bigDataPacket.rewind();
                 ByteBuffer concatenated = ByteBuffer
                         .allocate(bigDataPacket.limit() + value.length)
                         .put(bigDataPacket)
@@ -344,10 +350,12 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
                 if (bigDataPacket.limit() < bigDataPacketSize + 6) {
                     // If the received data is smaller than the expected packet size (+ 6 bytes header),
                     // wait for the next packet and append it
+                    LOG.debug("Big data packet is not complete yet, got {} bytes while expecting {}+6. Waiting for more...", bigDataPacket.limit(), bigDataPacketSize);
                     return true;
                 } else {
                     value = bigDataPacket.array();
                     bigDataPacket = null;
+                    LOG.debug("Big data packet complete, got {} bytes while expecting {}+6", value.length, bigDataPacketSize);
                 }
             }
             switch (value[0]) {
@@ -356,7 +364,7 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
                     if (value.length < packetLength + 6) {
                         // If the received packet is smaller than the expected packet size (+ 6 bytes header),
                         // wait for the next packet and append it
-                        LOG.debug("Big data packet is not complete yet, got {} bytes while expecting {}. Waiting for more...", value.length, packetLength + 6);
+                        LOG.debug("Big data packet is not complete yet, got {} bytes while expecting {}+6. Waiting for more...", value.length, packetLength);
                         bigDataPacketSize = packetLength;
                         bigDataPacket = ByteBuffer.wrap(value);
                         return true;
@@ -364,6 +372,12 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
                     switch (value[1]) {
                         case ColmiR0xConstants.BIG_DATA_TYPE_SLEEP:
                             ColmiR0xPacketHandler.historicalSleep(getDevice(), getContext(), value);
+
+                            daysAgo = 0;
+                            fetchHistoryHRV();
+
+                            // Signal history sync finished at this point, since older firmwares
+                            // will not send anything back after requesting HRV history
                             fetchRecordedDataFinished();
                             break;
                         case ColmiR0xConstants.BIG_DATA_TYPE_SPO2:
@@ -376,13 +390,21 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
                     }
                     break;
                 default:
-                    LOG.info("Received unrecognized big data packet: {}", StringUtils.bytesToHex(value));
+                    LOG.info("Received unrecognized notify v2 packet: {}", StringUtils.bytesToHex(value));
                     break;
             }
             return true;
         }
 
         return false;
+    }
+
+    @NonNull
+    private static GBDeviceEventBatteryInfo createDeviceBatteryInfoEvent(int levelResponse, boolean charging) {
+        GBDeviceEventBatteryInfo batteryEvent = new GBDeviceEventBatteryInfo();
+        batteryEvent.level = levelResponse;
+        batteryEvent.state = charging ? BatteryState.BATTERY_CHARGING : BatteryState.BATTERY_NORMAL;
+        return batteryEvent;
     }
 
     private byte[] buildPacket(byte[] contents) {
@@ -475,6 +497,12 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
                 LOG.info("Stress preference request sent: {}", StringUtils.bytesToHex(stressPrefsPacket));
                 sendWrite("stressPreferenceRequest", stressPrefsPacket);
                 break;
+            case DeviceSettingsPreferenceConst.PREF_HRV_ALL_DAY_MONITORING:
+                final boolean hrvEnabled = prefs.getBoolean(DeviceSettingsPreferenceConst.PREF_HRV_ALL_DAY_MONITORING, false);
+                byte[] hrvPrefsPacket = buildPacket(new byte[]{ColmiR0xConstants.CMD_AUTO_HRV_PREF, ColmiR0xConstants.PREF_WRITE, (byte) (hrvEnabled ? 0x01 : 0x00)});
+                LOG.info("HRV preference request sent: {}", StringUtils.bytesToHex(hrvPrefsPacket));
+                sendWrite("hrvPreferenceRequest", hrvPrefsPacket);
+                break;
         }
     }
 
@@ -535,6 +563,9 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
         request = buildPacket(new byte[]{ColmiR0xConstants.CMD_AUTO_SPO2_PREF, ColmiR0xConstants.PREF_READ});
         LOG.info("Request SpO2 measurement setting from ring: {}", StringUtils.bytesToHex(request));
         sendWrite("spo2SettingRequest", request);
+        request = buildPacket(new byte[]{ColmiR0xConstants.CMD_AUTO_HRV_PREF, ColmiR0xConstants.PREF_READ});
+        LOG.info("Request HRV measurement setting from ring: {}", StringUtils.bytesToHex(request));
+        sendWrite("hrvSettingRequest", request);
         request = buildPacket(new byte[]{ColmiR0xConstants.CMD_GOALS, ColmiR0xConstants.PREF_READ});
         LOG.info("Request goals from ring: {}", StringUtils.bytesToHex(request));
         sendWrite("goalsSettingRequest", request);
@@ -545,6 +576,15 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
         byte[] poweroffPacket = buildPacket(new byte[]{ColmiR0xConstants.CMD_POWER_OFF, 0x01});
         LOG.info("Poweroff request sent: {}", StringUtils.bytesToHex(poweroffPacket));
         sendWrite("poweroffRequest", poweroffPacket);
+    }
+
+    @Override
+    public void onReset(int flags) {
+        if ((flags & GBDeviceProtocol.RESET_FLAGS_FACTORY_RESET) != 0) {
+            byte[] resetPacket = buildPacket(new byte[]{ColmiR0xConstants.CMD_FACTORY_RESET, 0x66, 0x66});
+            LOG.info("Factory reset request sent: {}", StringUtils.bytesToHex(resetPacket));
+            sendWrite("resetRequest", resetPacket);
+        }
     }
 
     @Override
@@ -586,6 +626,7 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
         syncingDay.set(Calendar.HOUR_OF_DAY, 0);
         syncingDay.set(Calendar.MINUTE, 0);
         syncingDay.set(Calendar.SECOND, 0);
+        syncingDay.set(Calendar.MILLISECOND, 0);
         byte[] activityHistoryRequest = buildPacket(new byte[]{ColmiR0xConstants.CMD_SYNC_ACTIVITY, (byte) daysAgo, 0x0f, 0x00, 0x5f, 0x01});
         LOG.info("Fetch historical activity data request sent: {}", StringUtils.bytesToHex(activityHistoryRequest));
         sendWrite("activityHistoryRequest", activityHistoryRequest);
@@ -601,12 +642,14 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
             syncingDay.set(Calendar.MINUTE, 0);
             syncingDay.set(Calendar.SECOND, 0);
         }
+        syncingDay.set(Calendar.MILLISECOND, 0);
         ByteBuffer hrHistoryRequestBB = ByteBuffer.allocate(5);
         hrHistoryRequestBB.order(ByteOrder.LITTLE_ENDIAN);
         hrHistoryRequestBB.put(0, ColmiR0xConstants.CMD_SYNC_HEART_RATE);
-        hrHistoryRequestBB.putInt(1, (int) (syncingDay.getTimeInMillis() / 1000));
+        long requestTimestamp = syncingDay.getTimeInMillis() + syncingDay.get(Calendar.ZONE_OFFSET) + syncingDay.get(Calendar.DST_OFFSET);
+        hrHistoryRequestBB.putInt(1, (int) (requestTimestamp / 1000));
         byte[] hrHistoryRequest = buildPacket(hrHistoryRequestBB.array());
-        LOG.info("Fetch historical HR data request sent ({}): {}", syncingDay.getTime(), StringUtils.bytesToHex(hrHistoryRequest));
+        LOG.info("Fetch historical HR data request sent ({}): {}", DateTimeUtils.formatIso8601(syncingDay.getTime()), StringUtils.bytesToHex(hrHistoryRequest));
         sendWrite("hrHistoryRequest", hrHistoryRequest);
     }
 
@@ -649,5 +692,24 @@ public class ColmiR0xDeviceSupport extends AbstractBTLEDeviceSupport {
         };
         LOG.info("Fetch historical sleep data request sent: {}", StringUtils.bytesToHex(sleepHistoryRequest));
         sendCommand("sleepHistoryRequest", sleepHistoryRequest);
+    }
+
+    private void fetchHistoryHRV() {
+        getDevice().sendDeviceUpdateIntent(getContext());
+        syncingDay = Calendar.getInstance();
+        if (daysAgo != 0) {
+            syncingDay.add(Calendar.DAY_OF_MONTH, 0 - daysAgo);
+            syncingDay.set(Calendar.HOUR_OF_DAY, 0);
+            syncingDay.set(Calendar.MINUTE, 0);
+        }
+        syncingDay.set(Calendar.SECOND, 0);
+        syncingDay.set(Calendar.MILLISECOND, 0);
+        ByteBuffer hrvHistoryRequestBB = ByteBuffer.allocate(5);
+        hrvHistoryRequestBB.order(ByteOrder.LITTLE_ENDIAN);
+        hrvHistoryRequestBB.put(0, ColmiR0xConstants.CMD_SYNC_HRV);
+        hrvHistoryRequestBB.putInt(1, daysAgo);
+        byte[] hrvHistoryRequest = buildPacket(hrvHistoryRequestBB.array());
+        LOG.info("Fetch historical HRV data request sent ({}): {}", syncingDay.getTime(), StringUtils.bytesToHex(hrvHistoryRequest));
+        sendWrite("hrvHistoryRequest", hrvHistoryRequest);
     }
 }

@@ -16,6 +16,8 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>. */
 package nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets;
 
+import androidx.annotation.NonNull;
+
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -344,6 +346,24 @@ public class Weather {
         }
     }
 
+    public enum ErrorCode {
+        NETWORK_ERROR,
+        GPS_PERMISSION_ERROR,
+        WEATHER_DISABLED
+    }
+
+    private static byte errorCodeToByte(ErrorCode errorCode) {
+        switch (errorCode) {
+            case NETWORK_ERROR:
+                return 0;
+            case GPS_PERMISSION_ERROR:
+                return 1;
+            case WEATHER_DISABLED:
+                return 2;
+        }
+        throw new RuntimeException(); // Shouldn't happen
+    }
+
     public static class CurrentWeatherRequest extends HuaweiPacket {
         public static final byte id = 0x01;
 
@@ -383,9 +403,9 @@ public class Weather {
 
                 if (windDirection != null) {
                     if (windDirection > 0)
-                        wind |= ((short) (windDirection * 8 / 360)) << 8;
+                        wind |= (short) (((short) (windDirection * 8 / 360)) << 8);
                     else
-                        wind |= ((short) (360 + windDirection) * 8 / 360) << 8;
+                        wind |= (short) (((short) (360 + windDirection) * 8 / 360) << 8);
                 }
                 tlv81.put(0x03, wind);
             }
@@ -543,6 +563,22 @@ public class Weather {
         }
     }
 
+    public static class WeatherErrorSimple {
+        public static final byte id = 0x07;
+
+        public static class Request extends HuaweiPacket {
+            public Request(ParamsProvider paramsProvider, ErrorCode errorCode) {
+                super(paramsProvider);
+
+                this.serviceId = Weather.id;
+                this.commandId = id;
+                this.tlv = new HuaweiTLV().put(0x01, errorCodeToByte(errorCode));
+                this.isEncrypted = true;
+                this.complete = true;
+            }
+        }
+    }
+
     public static class WeatherForecastData {
         public static final byte id = 0x08;
 
@@ -551,6 +587,7 @@ public class Weather {
             public WeatherIcon icon;
             public Byte temperature;
 
+            @NonNull
             @Override
             public String toString() {
                 String timestampStr = new Date(timestamp * 1000L).toString();
@@ -574,6 +611,7 @@ public class Weather {
             public Integer moonSetTime;
             public MoonPhase moonPhase;
 
+            @NonNull
             @Override
             public String toString() {
                 String timestampStr = new Date(timestamp * 1000L).toString();
@@ -762,6 +800,29 @@ public class Weather {
 
                 this.sunRiseSetSupported = (this.supportedBitmap & 0x01) != 0;
                 this.moonPhaseSupported = (this.supportedBitmap & 0x02) != 0;
+            }
+        }
+    }
+
+    public static class WeatherErrorExtended {
+        public static final byte id = 0x0c;
+
+        public static class Request extends HuaweiPacket {
+            public Request(ParamsProvider paramsProvider, ErrorCode errorCode, boolean serverError) {
+                super(paramsProvider);
+
+                this.serviceId = Weather.id;
+                this.commandId = id;
+
+                HuaweiTLV innerTlv = new HuaweiTLV();
+                innerTlv.put(0x02, errorCodeToByte(errorCode));
+                if (errorCode == ErrorCode.NETWORK_ERROR && serverError)
+                    innerTlv.put(0x03, (byte) 0x01);
+
+                this.tlv = new HuaweiTLV().put(0x81, innerTlv);
+
+                this.isEncrypted = true;
+                this.complete = true;
             }
         }
     }

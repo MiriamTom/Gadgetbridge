@@ -24,10 +24,10 @@ import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiTLV;
 public class Notifications {
     public static final byte id = 0x02;
     public static final byte[] defaultConstraints = new byte[]{
-            (short)0x02, (short)0x0F,
-            (short)0x00, (short)0x02, (short)0x1E,
-            (short)0x00, (short)0x02, (short)0x1E,
-            (short)0x00, (short)0x02, (short)0x1E
+            0x00, 0x02,   0x00, 0x0F,
+            0x00, 0x00,   0x00, 0x02,   0x00, 0x1E,
+            0x00, 0x00,   0x00, 0x02,   0x00, 0x1E,
+            0x00, 0x00,   0x00, 0x02,   0x00, 0x1E
     };
 
     public static class NotificationActionRequest extends HuaweiPacket {
@@ -75,21 +75,21 @@ public class Notifications {
                     .put(0x03, true); // This used to be vibrate, but doesn't work
 
             HuaweiTLV subTlv = new HuaweiTLV();
-            if (titleContent != null)
+            if (titleContent != null && !titleContent.isEmpty())
                 subTlv.put(0x8D, new HuaweiTLV()
                         .put(0x0E, (byte) TextType.title)
                         .put(0x0F, (byte) encoding)
                         .put(0x10, titleContent)
                 );
 
-            if (senderContent != null)
+            if (senderContent != null && !senderContent.isEmpty())
                 subTlv.put(0x8D, new HuaweiTLV()
                         .put(0x0E, (byte) TextType.sender)
                         .put(0x0F, (byte) encoding)
                         .put(0x10, senderContent)
                 );
 
-            if (bodyContent != null)
+            if (bodyContent != null && !bodyContent.isEmpty())
                 subTlv.put(0x8D, new HuaweiTLV()
                         .put(0x0E, (byte) TextType.text)
                         .put(0x0F, (byte) encoding)

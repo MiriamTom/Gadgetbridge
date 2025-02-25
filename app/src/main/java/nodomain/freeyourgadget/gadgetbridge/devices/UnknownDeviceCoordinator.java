@@ -21,6 +21,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.net.Uri;
 
+import java.util.Collections;
 import java.util.List;
 
 import androidx.annotation.DrawableRes;
@@ -65,6 +66,16 @@ public class UnknownDeviceCoordinator extends AbstractDeviceCoordinator {
         }
 
         @Override
+        public List<AbstractActivitySample> getAllActivitySamplesHighRes(int timestamp_from, int timestamp_to) {
+            return null;
+        }
+
+        @Override
+        public boolean hasHighResData() {
+            return false;
+        }
+
+        @Override
         public List<AbstractActivitySample> getActivitySamples(int timestamp_from, int timestamp_to) {
             return null;
         }
@@ -85,6 +96,12 @@ public class UnknownDeviceCoordinator extends AbstractDeviceCoordinator {
         @Nullable
         @Override
         public AbstractActivitySample getLatestActivitySample() {
+            return null;
+        }
+
+        @Nullable
+        @Override
+        public AbstractActivitySample getLatestActivitySample(final int until) {
             return null;
         }
 

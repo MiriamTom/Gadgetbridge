@@ -40,6 +40,7 @@ public class ActivitySummaryEntries {
 
     public static final String STEP_RATE_SUM = "stepRateSum";
     public static final String STEP_RATE_AVG = "stepRateAvg";
+    public static final String STEP_RATE_MAX = "stepRateMax";
     public static final String STEP_LENGTH_AVG = "stepLengthAvg";
 
     public static final String CADENCE_AVG = "averageCadence";
@@ -77,6 +78,14 @@ public class ActivitySummaryEntries {
     public static final String HR_ZONE_EXTREME = "hrZoneExtreme";
     public static final String HR_ZONE_MAXIMUM = "hrZoneMaximum";
 
+    public static final String RESPIRATION_AVG = "average_respiration_rate";
+    public static final String RESPIRATION_MAX = "max_respiration_rate";
+    public static final String RESPIRATION_MIN = "min_respiration_rate";
+    public static final String SPO2_AVG = "menuitem_spo2";
+    public static final String STRESS_AVG = "menuitem_stress";
+    public static final String HRV_SDRR = "hrv_sdrr";
+    public static final String HRV_RMSSD = "hrv_rmssd";
+
     public static final String LANE_LENGTH = "laneLength";
     public static final String LAPS = "laps";
     public static final String LAP_PACE_AVERAGE = "averageLapPace";
@@ -95,6 +104,10 @@ public class ActivitySummaryEntries {
     public static final String STROKE_RATE_AVG = "avgStrokeRate";
     public static final String STROKE_RATE_MAX = "maxStrokeRate";
     public static final String STROKES = "strokes";
+
+    public static final String JUMP_RATE_AVG = "avgJumpRate";
+    public static final String JUMP_RATE_MAX = "maxJumpRate";
+    public static final String JUMPS = "totalJumps";
 
     public static final String SWIM_STYLE = "swimStyle";
     public static final String SWOLF_INDEX = "swolfIndex";
@@ -118,6 +131,7 @@ public class ActivitySummaryEntries {
     public static final String SETS = "workoutSets";
 
     public static final String UNIT_BPM = "bpm";
+    public static final String UNIT_BREATHS_PER_MIN = "breaths_per_min";
     public static final String UNIT_CM = "cm";
     public static final String UNIT_UNIX_EPOCH_SECONDS = "unix_epoch_seconds";
     public static final String UNIT_KCAL = "calories_unit";
@@ -125,11 +139,12 @@ public class ActivitySummaryEntries {
     public static final String UNIT_LAPS = "laps_unit";
     public static final String UNIT_KILOMETERS = "km";
     public static final String UNIT_METERS = "meters";
+    public static final String UNIT_PERCENTAGE = "%";
     public static final String UNIT_ML_KG_MIN = "ml/kg/min";
     public static final String UNIT_NONE = "";
     public static final String UNIT_HOURS = "hours";
     public static final String UNIT_SECONDS = "seconds";
-    public static final String UNIT_MILLISECONDS = "milliseconds";
+    public static final String UNIT_MILLISECONDS = "milliseconds_ms";
     public static final String UNIT_SECONDS_PER_KM = "seconds_km";
     public static final String UNIT_SECONDS_PER_M = "seconds_m";
     public static final String UNIT_METERS_PER_SECOND = "meters_second";
@@ -139,6 +154,8 @@ public class ActivitySummaryEntries {
     public static final String UNIT_STROKES = "strokes_unit";
     public static final String UNIT_STROKES_PER_MINUTE = "strokes_minute";
     public static final String UNIT_STROKES_PER_SECOND = "strokes_second";
+    public static final String UNIT_JUMPS = "jumps_unit";
+    public static final String UNIT_JUMPS_PER_MINUTE = "jumps_minute";
     public static final String UNIT_YARD = "yard";
     public static final String UNIT_DEGREES = "degrees";
     public static final String UNIT_STRING = "string";
@@ -151,6 +168,7 @@ public class ActivitySummaryEntries {
     public static final String GROUP_ELEVATION = "Elevation";
     public static final String GROUP_HEART_RATE_ZONES = "HeartRateZones";
     public static final String GROUP_STROKES = "Strokes";
+    public static final String GROUP_JUMPS = "Jumps";
     public static final String GROUP_SWIMMING = "Swimming";
     public static final String GROUP_TRAINING_EFFECT = "TrainingEffect";
     public static final String GROUP_LAPS = "laps";

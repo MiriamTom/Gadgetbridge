@@ -28,6 +28,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Set;
@@ -77,6 +78,17 @@ public abstract class AbstractSampleProvider<T extends AbstractActivitySample> i
 
     @NonNull
     @Override
+    public List<T> getAllActivitySamplesHighRes(int timestamp_from, int timestamp_to) {
+        return getGBActivitySamplesHighRes(timestamp_from, timestamp_to);
+    }
+
+    @Override
+    public boolean hasHighResData() {
+        return false;
+    }
+
+    @NonNull
+    @Override
     @Deprecated // use getAllActivitySamples
     public List<T> getActivitySamples(int timestamp_from, int timestamp_to) {
         if (getRawKindSampleProperty() != null) {
@@ -118,6 +130,29 @@ public abstract class AbstractSampleProvider<T extends AbstractActivitySample> i
 
     @Nullable
     @Override
+    public T getLatestActivitySample(final int until) {
+        QueryBuilder<T> qb = getSampleDao().queryBuilder();
+        Device dbDevice = DBHelper.findDevice(getDevice(), getSession());
+        if (dbDevice == null) {
+            // no device, no sample
+            return null;
+        }
+        Property deviceProperty = getDeviceIdentifierSampleProperty();
+        Property timestampProperty = getTimestampSampleProperty();
+        qb.where(timestampProperty.le(until))
+                .where(deviceProperty.eq(dbDevice.getId()))
+                .orderDesc(timestampProperty).limit(1);
+        List<T> samples = qb.build().list();
+        if (samples.isEmpty()) {
+            return null;
+        }
+        T sample = samples.get(0);
+        sample.setProvider(this);
+        return sample;
+    }
+
+    @Nullable
+    @Override
     public T getFirstActivitySample() {
         QueryBuilder<T> qb = getSampleDao().queryBuilder();
         Device dbDevice = DBHelper.findDevice(getDevice(), getSession());
@@ -136,6 +171,12 @@ public abstract class AbstractSampleProvider<T extends AbstractActivitySample> i
         return sample;
     }
 
+    /**
+     * Get the activity samples between two timestamps (inclusive). Exactly one every minute.
+     * @param timestamp_from Start timestamp
+     * @param timestamp_to End timestamp
+     * @return Exactly one sample for every minute
+     */
     protected List<T> getGBActivitySamples(int timestamp_from, int timestamp_to) {
         QueryBuilder<T> qb = getSampleDao().queryBuilder();
         Property timestampProperty = getTimestampSampleProperty();
@@ -153,6 +194,20 @@ public abstract class AbstractSampleProvider<T extends AbstractActivitySample> i
         }
         detachFromSession();
         return samples;
+    }
+
+    /**
+     * Get the activity samples between two timestamps (inclusive).
+     * Differs from {@link #getGBActivitySamples(int, int)} in that it supplies as many samples as
+     * available.
+     * It assumes {@link #getGBActivitySamples(int, int)} returns the highest resolution data unless
+     * this is overwritten.
+     * @param timestamp_from Start timestamp
+     * @param timestamp_to End timestamp
+     * @return All the samples between start and end timestamp (inclusive)
+     */
+    protected List<T> getGBActivitySamplesHighRes(int timestamp_from, int timestamp_to) {
+        return getGBActivitySamples(timestamp_from, timestamp_to);
     }
 
     /**
@@ -189,15 +244,28 @@ public abstract class AbstractSampleProvider<T extends AbstractActivitySample> i
     protected abstract Property getDeviceIdentifierSampleProperty();
 
     public void convertCumulativeSteps(final List<T> samples, final Property stepsSampleProperty) {
+        // Fix over-counting at the turn of day
         final T lastSample = getLastSampleWithStepsBefore(samples.get(0).getTimestamp(), stepsSampleProperty);
-        if (lastSample != null && sameDay(lastSample, samples.get(0)) && samples.get(0).getSteps() > 0) {
-            samples.get(0).setSteps(samples.get(0).getSteps() - lastSample.getSteps());
+        if (lastSample != null && sameDay(lastSample, samples.get(0))) {
+            if (samples.get(0).getSteps() > 0) {
+                samples.get(0).setSteps(samples.get(0).getSteps() - lastSample.getSteps());
+            }
+
+            if (samples.get(0).getDistanceCm() > 0) {
+                samples.get(0).setDistanceCm(samples.get(0).getDistanceCm() - lastSample.getDistanceCm());
+            }
+
+            if (samples.get(0).getActiveCalories() > 0) {
+                samples.get(0).setActiveCalories(samples.get(0).getActiveCalories() - lastSample.getActiveCalories());
+            }
         }
 
-        // Steps on the Garmin Watch are reported cumulatively per day - convert them to
         // This slightly breaks activity recognition, because we don't have per-minute granularity...
         int prevSteps = samples.get(0).getSteps();
+        int prevDistance = samples.get(0).getDistanceCm();
+        int prevActiveCalories = samples.get(0).getActiveCalories();
         samples.get(0).setTimestamp((samples.get(0).getTimestamp() / 60) * 60);
+        int bak;
 
         for (int i = 1; i < samples.size(); i++) {
             final T s1 = samples.get(i - 1);
@@ -207,11 +275,26 @@ public abstract class AbstractSampleProvider<T extends AbstractActivitySample> i
             if (!sameDay(s1, s2)) {
                 // went past midnight - reset steps
                 prevSteps = s2.getSteps() > 0 ? s2.getSteps() : 0;
-            } else if (s2.getSteps() > 0) {
-                // New steps sample for the current day - subtract the previous seen sample
-                int bak = s2.getSteps();
-                s2.setSteps(s2.getSteps() - prevSteps);
-                prevSteps = bak;
+                prevDistance = s2.getDistanceCm() > 0 ? s2.getDistanceCm() : 0;
+                prevActiveCalories = s2.getActiveCalories() > 0 ? s2.getActiveCalories() : 0;
+            } else {
+                // New value for the current day - subtract the previous seen sample
+
+                if (s2.getSteps() > 0) {
+                    bak = s2.getSteps();
+                    s2.setSteps(s2.getSteps() - prevSteps);
+                    prevSteps = bak;
+                }
+                if (s2.getDistanceCm() > 0) {
+                    bak = s2.getDistanceCm();
+                    s2.setDistanceCm(s2.getDistanceCm() - prevDistance);
+                    prevDistance = bak;
+                }
+                if (s2.getActiveCalories() > 0) {
+                    bak = s2.getActiveCalories();
+                    s2.setActiveCalories(s2.getActiveCalories() - prevActiveCalories);
+                    prevActiveCalories = bak;
+                }
             }
         }
     }
@@ -255,7 +338,7 @@ public abstract class AbstractSampleProvider<T extends AbstractActivitySample> i
 
         final long nanoStart = System.nanoTime();
 
-        final List<T> ret = new ArrayList<>(samples);
+        final List<T> ret = new LinkedList<>(samples);
 
         //ret.sort(Comparator.comparingLong(T::getTimestamp));
 
@@ -263,13 +346,7 @@ public abstract class AbstractSampleProvider<T extends AbstractActivitySample> i
         if (firstTimestamp - timestamp_from > 60) {
             // Gap at the start
             for (int ts = timestamp_from; ts <= firstTimestamp + 60; ts += 60) {
-                final T dummySample = createActivitySample();
-                dummySample.setTimestamp(ts);
-                dummySample.setRawKind(ActivityKind.UNKNOWN.getCode());
-                dummySample.setRawIntensity(ActivitySample.NOT_MEASURED);
-                dummySample.setSteps(ActivitySample.NOT_MEASURED);
-                dummySample.setProvider(this);
-                ret.add(0, dummySample);
+                ret.add(0, createDummySample(ts));
             }
         }
 
@@ -279,13 +356,7 @@ public abstract class AbstractSampleProvider<T extends AbstractActivitySample> i
         if (minTo - lastTimestamp > 60) {
             // Gap at the end
             for (int ts = lastTimestamp + 60; ts <= minTo; ts += 60) {
-                final T dummySample = createActivitySample();
-                dummySample.setTimestamp(ts);
-                dummySample.setRawKind(ActivityKind.UNKNOWN.getCode());
-                dummySample.setRawIntensity(ActivitySample.NOT_MEASURED);
-                dummySample.setSteps(ActivitySample.NOT_MEASURED);
-                dummySample.setProvider(this);
-                ret.add(dummySample);
+                ret.add(createDummySample(ts));
             }
         }
 
@@ -297,13 +368,7 @@ public abstract class AbstractSampleProvider<T extends AbstractActivitySample> i
             if (sample.getTimestamp() - previousSample.getTimestamp() > 60) {
                 LOG.trace("Filling gap between {} and {}", Instant.ofEpochSecond(previousSample.getTimestamp() + 60), Instant.ofEpochSecond(sample.getTimestamp()));
                 for (int ts = previousSample.getTimestamp() + 60; ts < sample.getTimestamp(); ts += 60) {
-                    final T dummySample = createActivitySample();
-                    dummySample.setTimestamp(ts);
-                    dummySample.setRawKind(ActivityKind.UNKNOWN.getCode());
-                    dummySample.setRawIntensity(ActivitySample.NOT_MEASURED);
-                    dummySample.setSteps(ActivitySample.NOT_MEASURED);
-                    dummySample.setProvider(this);
-                    it.add(dummySample);
+                    it.add(createDummySample(ts));
                 }
             }
             previousSample = sample;
@@ -317,5 +382,18 @@ public abstract class AbstractSampleProvider<T extends AbstractActivitySample> i
         LOG.trace("Filled gaps with {} samples in {}ms", dummyCount, executionTime);
 
         return ret;
+    }
+
+    private T createDummySample(final int ts) {
+        final T dummySample = createActivitySample();
+        dummySample.setTimestamp(ts);
+        dummySample.setRawKind(ActivityKind.UNKNOWN.getCode());
+        dummySample.setRawIntensity(ActivitySample.NOT_MEASURED);
+        dummySample.setSteps(ActivitySample.NOT_MEASURED);
+        dummySample.setHeartRate(ActivitySample.NOT_MEASURED);
+        dummySample.setDistanceCm(ActivitySample.NOT_MEASURED);
+        dummySample.setActiveCalories(ActivitySample.NOT_MEASURED);
+        dummySample.setProvider(this);
+        return dummySample;
     }
 }

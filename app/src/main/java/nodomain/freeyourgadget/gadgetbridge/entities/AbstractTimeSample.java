@@ -33,6 +33,10 @@ public abstract class AbstractTimeSample implements TimeSample {
 
     public abstract void setDeviceId(long deviceId);
 
+    public abstract void setDevice(Device device);
+
+    public abstract void setUser(User user);
+
     @NonNull
     @Override
     public String toString() {

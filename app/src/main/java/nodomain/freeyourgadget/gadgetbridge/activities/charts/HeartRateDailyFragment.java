@@ -1,5 +1,6 @@
 package nodomain.freeyourgadget.gadgetbridge.activities.charts;
 
+import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.LayoutInflater;
@@ -12,17 +13,19 @@ import androidx.core.content.ContextCompat;
 
 import com.github.mikephil.charting.charts.Chart;
 import com.github.mikephil.charting.charts.LineChart;
-import com.github.mikephil.charting.components.Legend;
 import com.github.mikephil.charting.components.LegendEntry;
+import com.github.mikephil.charting.components.LimitLine;
 import com.github.mikephil.charting.components.XAxis;
 import com.github.mikephil.charting.components.YAxis;
 import com.github.mikephil.charting.data.Entry;
 import com.github.mikephil.charting.data.LineData;
 import com.github.mikephil.charting.data.LineDataSet;
+import com.github.mikephil.charting.interfaces.datasets.ILineDataSet;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 
@@ -35,6 +38,8 @@ import nodomain.freeyourgadget.gadgetbridge.entities.AbstractActivitySample;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivityKind;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivitySample;
+import nodomain.freeyourgadget.gadgetbridge.model.HeartRateSample;
+import nodomain.freeyourgadget.gadgetbridge.util.Accumulator;
 import nodomain.freeyourgadget.gadgetbridge.util.Prefs;
 
 public class HeartRateDailyFragment extends AbstractChartFragment<HeartRateDailyFragment.HeartRateData> {
@@ -50,7 +55,6 @@ public class HeartRateDailyFragment extends AbstractChartFragment<HeartRateDaily
     private TextView hrAverage;
     private TextView hrMinimum;
     private TextView hrMaximum;
-    private LinearLayout heartRateRestingWrapper;
     private LineChart hrLineChart;
 
 
@@ -70,26 +74,27 @@ public class HeartRateDailyFragment extends AbstractChartFragment<HeartRateDaily
         hrAverage = rootView.findViewById(R.id.hr_average);
         hrMinimum = rootView.findViewById(R.id.hr_minimum);
         hrMaximum = rootView.findViewById(R.id.hr_maximum);
-        heartRateRestingWrapper = rootView.findViewById(R.id.hr_resting_wrapper);
+        final LinearLayout heartRateRestingWrapper = rootView.findViewById(R.id.hr_resting_wrapper);
 
         setupChart();
         refresh();
         setupLegend(hrLineChart);
 
-        if (!supportHeartRateRestingMeasurement()) {
+        if (!supportsHeartRateRestingMeasurement()) {
             heartRateRestingWrapper.setVisibility(View.GONE);
         }
 
         return rootView;
     }
 
-    public boolean supportHeartRateRestingMeasurement() {
-        return false;
+    public boolean supportsHeartRateRestingMeasurement() {
+        final GBDevice device = getChartsHost().getDevice();
+        return device.getDeviceCoordinator().supportsHeartRateRestingMeasurement(device);
     }
 
     protected List<? extends AbstractActivitySample> getActivitySamples(DBHandler db, GBDevice device, int tsFrom, int tsTo) {
         SampleProvider<? extends ActivitySample> provider = device.getDeviceCoordinator().getSampleProvider(device, db.getDaoSession());
-        return provider.getAllActivitySamples(tsFrom, tsTo);
+        return provider.getAllActivitySamplesHighRes(tsFrom, tsTo);
     }
 
     @Override
@@ -120,11 +125,21 @@ public class HeartRateDailyFragment extends AbstractChartFragment<HeartRateDaily
         day.add(Calendar.HOUR, 0);
         int startTs = (int) (day.getTimeInMillis() / 1000);
         int endTs = startTs + 24 * 60 * 60 - 1;
-        Date date = new Date((long) endTs * 1000);
-        String formattedDate = new SimpleDateFormat("E, MMM dd").format(date);
-        mDateView.setText(formattedDate);
+
         List<? extends ActivitySample> samples = getActivitySamples(db, device, startTs, endTs);
-        return new HeartRateData(samples);
+
+        int restingHeartRate = -1;
+        if (supportsHeartRateRestingMeasurement()) {
+            restingHeartRate = device.getDeviceCoordinator()
+                    .getHeartRateRestingSampleProvider(device, db.getDaoSession())
+                    .getAllSamples(startTs * 1000L, endTs * 1000L)
+                    .stream()
+                    .max(Comparator.comparingLong(HeartRateSample::getTimestamp))
+                    .map(HeartRateSample::getHeartRate)
+                    .orElse(-1);
+        }
+
+        return new HeartRateData(samples, restingHeartRate);
     }
 
     @Override
@@ -174,49 +189,28 @@ public class HeartRateDailyFragment extends AbstractChartFragment<HeartRateDaily
         hrEntry.label = getTitle();
         hrEntry.formColor = HEARTRATE_COLOR;
         legendEntries.add(hrEntry);
+
+        if (GBApplication.getPrefs().getBoolean("charts_show_average", true)) {
+            LegendEntry hrAverageEntry = new LegendEntry();
+            hrAverageEntry.label = getString(R.string.hr_average);
+            hrAverageEntry.formColor = Color.RED;
+            legendEntries.add(hrAverageEntry);
+        }
+
+        //if (supportsHeartRateRestingMeasurement()) {
+        //    LegendEntry hrRestingEntry = new LegendEntry();
+        //    hrRestingEntry.label = getString(R.string.hr_resting);
+        //    hrRestingEntry.formColor = Color.GRAY;
+        //    legendEntries.add(hrRestingEntry);
+        //}
+
         chart.getLegend().setCustom(legendEntries);
         chart.getLegend().setTextColor(LEGEND_TEXT_COLOR);
         chart.getLegend().setWordWrapEnabled(true);
     }
 
-    @Override
-    protected void updateChartsnUIThread(HeartRateDailyFragment.HeartRateData data) {
-        HeartRateUtils heartRateUtilsInstance = HeartRateUtils.getInstance();
-        final TimestampTranslation tsTranslation = new TimestampTranslation();
-        final List<Entry> lineEntries = new ArrayList<>();
-        List<? extends ActivitySample> samples = data.samples;
-        int average = 0;
-        int resting = 0;
-        int minimum = 0;
-        int maximum = 0;
-        int sum = 0;
-        int n = 0;
-        int lastHrSampleIndex = -1;
-        for (int i =0; i < samples.size(); i++) {
-            ActivitySample sample = samples.get(i);
-            int ts = tsTranslation.shorten(sample.getTimestamp());
-            if (sample.getKind() != ActivityKind.NOT_WORN && heartRateUtilsInstance.isValidHeartRateValue(sample.getHeartRate())) {
-                if (lastHrSampleIndex > -1 && ts - lastHrSampleIndex > 1800 * HeartRateUtils.MAX_HR_MEASUREMENTS_GAP_MINUTES) {
-                    lineEntries.add(new Entry(lastHrSampleIndex + 1, 0 ));
-                    lineEntries.add(new Entry(ts - 1, 0));
-                }
-                lineEntries.add(new Entry(ts, sample.getHeartRate()));
-                lastHrSampleIndex = ts;
-            }
-            if (sample.getHeartRate() <= 0) {
-                continue;
-            }
-            n++;
-            sum += sample.getHeartRate();
-            if (sample.getHeartRate() > maximum) {
-                maximum = sample.getHeartRate();
-            }
-            if (minimum == 0 || sample.getHeartRate() < minimum) {
-                minimum = sample.getHeartRate();
-            }
-        }
-
-        LineDataSet dataSet = new LineDataSet(lineEntries, "Heart Rate");
+    protected LineDataSet createHeartRateDataSet(final List<Entry> values) {
+        LineDataSet dataSet = new LineDataSet(values, "Heart Rate");
         dataSet.setLineWidth(1.5f);
         dataSet.setMode(LineDataSet.Mode.HORIZONTAL_BEZIER);
         dataSet.setCubicIntensity(0.1f);
@@ -225,16 +219,65 @@ public class HeartRateDailyFragment extends AbstractChartFragment<HeartRateDaily
         dataSet.setAxisDependency(YAxis.AxisDependency.RIGHT);
         dataSet.setColor(HEARTRATE_COLOR);
         dataSet.setValueTextColor(CHART_TEXT_COLOR);
+        return dataSet;
+    }
 
-        if (n > 0 && sum > 0) {
-            average = sum / n;
+    @Override
+    protected void updateChartsnUIThread(HeartRateDailyFragment.HeartRateData data) {
+        Calendar day = Calendar.getInstance();
+        day.setTime(getEndDate());
+        day.add(Calendar.DATE, 0);
+        day.set(Calendar.HOUR_OF_DAY, 0);
+        day.set(Calendar.MINUTE, 0);
+        day.set(Calendar.SECOND, 0);
+        day.add(Calendar.HOUR, 0);
+        int startTs = (int) (day.getTimeInMillis() / 1000);
+        int endTs = startTs + 24 * 60 * 60 - 1;
+        Date date = new Date((long) endTs * 1000);
+        String formattedDate = new SimpleDateFormat("E, MMM dd").format(date);
+        mDateView.setText(formattedDate);
+
+        HeartRateUtils heartRateUtilsInstance = HeartRateUtils.getInstance();
+        final TimestampTranslation tsTranslation = new TimestampTranslation();
+        final List<Entry> lineEntries = new ArrayList<>();
+        List<? extends ActivitySample> samples = data.samples;
+        final Accumulator accumulator = new Accumulator();
+
+        final List<ILineDataSet> lineDataSets = new ArrayList<>();
+        int lastTsShorten = 0;
+        for (int i =0; i < samples.size(); i++) {
+            final ActivitySample sample = samples.get(i);
+            final int tsShorten = tsTranslation.shorten(sample.getTimestamp());
+            if (!heartRateUtilsInstance.isValidHeartRateValue(sample.getHeartRate())) {
+                continue;
+            }
+            if (lastTsShorten == 0 || (tsShorten - lastTsShorten) <= 60 * HeartRateUtils.MAX_HR_MEASUREMENTS_GAP_MINUTES) {
+                lineEntries.add(new Entry(tsShorten, sample.getHeartRate()));
+            } else {
+                if (!lineEntries.isEmpty()) {
+                    List<Entry> clone = new ArrayList<>(lineEntries.size());
+                    clone.addAll(lineEntries);
+                    lineDataSets.add(createHeartRateDataSet(clone));
+                    lineEntries.clear();
+                }
+            }
+            lastTsShorten = tsShorten;
+            lineEntries.add(new Entry(tsShorten, sample.getHeartRate()));
+            accumulator.add(sample.getHeartRate());
         }
+
+        if (!lineEntries.isEmpty()) {
+            lineDataSets.add(createHeartRateDataSet(lineEntries));
+        }
+
+        final int average = accumulator.getCount() > 0 ? (int) Math.round(accumulator.getAverage()) : -1;
+        final int minimum = accumulator.getCount() > 0 ? (int) Math.round(accumulator.getMin()) : -1;
+        final int maximum = accumulator.getCount() > 0 ? (int) Math.round(accumulator.getMax()) : -1;
 
         hrAverage.setText(average > 0 ? getString(R.string.bpm_value_unit, average) : "-");
         hrMinimum.setText(minimum > 0 ? getString(R.string.bpm_value_unit, minimum) : "-");
         hrMaximum.setText(maximum > 0 ? getString(R.string.bpm_value_unit, maximum) : "-");
-        hrResting.setText(resting > 0 ? getString(R.string.bpm_value_unit, resting) : "-");
-
+        hrResting.setText(data.restingHeartRate > 0 ? getString(R.string.bpm_value_unit, data.restingHeartRate) : "-");
 
         if (minimum > 0) {
             hrLineChart.getAxisLeft().setAxisMinimum(Math.max(minimum - 30, 0));
@@ -246,14 +289,34 @@ public class HeartRateDailyFragment extends AbstractChartFragment<HeartRateDaily
         }
 
         hrLineChart.getXAxis().setValueFormatter(new SampleXLabelFormatter(tsTranslation, "HH:mm"));
-        hrLineChart.setData(new LineData(dataSet));
+        hrLineChart.setData(new LineData(lineDataSets));
+
+        hrLineChart.getAxisLeft().removeAllLimitLines();
+
+        if (average > 0 && GBApplication.getPrefs().getBoolean("charts_show_average", true)) {
+            final LimitLine averageLine = new LimitLine(average);
+            averageLine.setLineWidth(1.5f);
+            averageLine.enableDashedLine(15f, 10f, 0f);
+            averageLine.setLineColor(Color.RED);
+            hrLineChart.getAxisLeft().addLimitLine(averageLine);
+        }
+
+        //if (data.restingHeartRate > 0) {
+        //    final LimitLine restingLine = new LimitLine(data.restingHeartRate);
+        //    restingLine.setLineWidth(1.5f);
+        //    restingLine.enableDashedLine(15f, 10f, 0f);
+        //    restingLine.setLineColor(Color.GRAY);
+        //    hrLineChart.getAxisLeft().addLimitLine(restingLine);
+        //}
     }
 
     protected static class HeartRateData extends ChartsData {
         public List<? extends ActivitySample> samples;
+        public int restingHeartRate;
 
-        protected HeartRateData(List<? extends ActivitySample> samples) {
+        protected HeartRateData(List<? extends ActivitySample> samples, int restingHeartRate) {
             this.samples = samples;
+            this.restingHeartRate = restingHeartRate;
         }
     }
 }

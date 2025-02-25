@@ -31,6 +31,7 @@ import java.util.Locale;
 
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
 import nodomain.freeyourgadget.gadgetbridge.R;
+import nodomain.freeyourgadget.gadgetbridge.activities.workouts.WorkoutValueFormatter;
 import nodomain.freeyourgadget.gadgetbridge.database.DBHandler;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivityUser;
@@ -142,18 +143,19 @@ public class StepsPeriodFragment extends StepsFragment<StepsPeriodFragment.Steps
     @Override
     protected StepsData refreshInBackground(ChartsHost chartsHost, DBHandler db, GBDevice device) {
         Calendar day = Calendar.getInstance();
-        Date to = new Date((long) this.getTSEnd() * 1000);
-        Date from = DateUtils.addDays(to,-(TOTAL_DAYS - 1));
-        String toFormattedDate = new SimpleDateFormat("E, MMM dd").format(to);
-        String fromFormattedDate = new SimpleDateFormat("E, MMM dd").format(from);
-        mDateView.setText(fromFormattedDate + " - " + toFormattedDate);
-        day.setTime(to);
+        day.setTime(getEndDate());
         List<StepsDay> stepsDaysData = getMyStepsDaysData(db, day, device);
         return new StepsData(stepsDaysData);
     }
 
     @Override
     protected void updateChartsnUIThread(StepsData stepsData) {
+        Date to = new Date((long) getTSEnd() * 1000);
+        Date from = DateUtils.addDays(to,-(TOTAL_DAYS - 1));
+        String toFormattedDate = new SimpleDateFormat("E, MMM dd").format(to);
+        String fromFormattedDate = new SimpleDateFormat("E, MMM dd").format(from);
+        mDateView.setText(fromFormattedDate + " - " + toFormattedDate);
+
         stepsChart.setData(null);
 
         List<BarEntry> entries = new ArrayList<>();
@@ -177,9 +179,10 @@ public class StepsPeriodFragment extends StepsFragment<StepsPeriodFragment.Steps
         }
         stepsChart.setData(barData);
         stepsAvg.setText(String.format(String.valueOf(stepsData.stepsDailyAvg)));
-        distanceAvg.setText(getString(R.string.steps_distance_unit, stepsData.distanceDailyAvg));
+        final WorkoutValueFormatter valueFormatter = new WorkoutValueFormatter();
+        distanceAvg.setText(valueFormatter.formatValue(stepsData.distanceDailyAvg, "km"));
         stepsTotal.setText(String.format(String.valueOf(stepsData.totalSteps)));
-        distanceTotal.setText(getString(R.string.steps_distance_unit, stepsData.totalDistance));
+        distanceTotal.setText(valueFormatter.formatValue(stepsData.totalDistance, "km"));
     }
 
     ValueFormatter getStepsChartDayValueFormatter(StepsPeriodFragment.StepsData stepsData) {

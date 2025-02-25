@@ -46,10 +46,14 @@ import nodomain.freeyourgadget.gadgetbridge.entities.BaseActivitySummaryDao;
 import nodomain.freeyourgadget.gadgetbridge.entities.DaoSession;
 import nodomain.freeyourgadget.gadgetbridge.entities.Device;
 import nodomain.freeyourgadget.gadgetbridge.entities.HuaweiActivitySampleDao;
+import nodomain.freeyourgadget.gadgetbridge.entities.HuaweiDictData;
+import nodomain.freeyourgadget.gadgetbridge.entities.HuaweiDictDataDao;
+import nodomain.freeyourgadget.gadgetbridge.entities.HuaweiDictDataValuesDao;
 import nodomain.freeyourgadget.gadgetbridge.entities.HuaweiWorkoutDataSampleDao;
 import nodomain.freeyourgadget.gadgetbridge.entities.HuaweiWorkoutPaceSampleDao;
 import nodomain.freeyourgadget.gadgetbridge.entities.HuaweiWorkoutSummarySample;
 import nodomain.freeyourgadget.gadgetbridge.entities.HuaweiWorkoutSummarySampleDao;
+import nodomain.freeyourgadget.gadgetbridge.entities.HuaweiWorkoutSwimSegmentsSampleDao;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
 import nodomain.freeyourgadget.gadgetbridge.util.GB;
 
@@ -74,6 +78,10 @@ public class HuaweiCoordinator {
 
     private App.AppDeviceParams appDeviceParams;
 
+    private HuaweiMusicUtils.MusicCapabilities musicDeviceParams = null;
+
+    private HuaweiMusicUtils.MusicCapabilities musicExtendedDeviceParams = null;
+
     private final HuaweiCoordinatorSupplier parent;
 
     private boolean transactionCrypted=true;
@@ -82,6 +90,17 @@ public class HuaweiCoordinator {
 
     public HuaweiCoordinator(HuaweiCoordinatorSupplier parent) {
         this.parent = parent;
+
+        // Set non-numeric capabilities
+        this.expandCapabilities = GB.hexStringToByteArray(getCapabilitiesSharedPreferences().getString("expandCapabilities", "00"));
+        this.notificationCapabilities = (byte)getCapabilitiesSharedPreferences().getInt("notificationCapabilities", -0x01);
+        this.notificationConstraints = ByteBuffer.wrap(GB.hexStringToByteArray(
+                getCapabilitiesSharedPreferences().getString(
+                        "notificationConstraints",
+                        GB.hexdump(Notifications.defaultConstraints)
+                )));
+        this.maxContactsCount = getCapabilitiesSharedPreferences().getInt("maxContactsCount", 0);
+
         for (String key : getCapabilitiesSharedPreferences().getAll().keySet()) {
             int service;
             try {
@@ -89,18 +108,7 @@ public class HuaweiCoordinator {
                 byte[] commands = GB.hexStringToByteArray(getCapabilitiesSharedPreferences().getString(key, "00"));
                 this.commandsPerService.put(service, commands);
             } catch (NumberFormatException e) {
-                if (key.equals("expandCapabilities"))
-                    this.expandCapabilities = GB.hexStringToByteArray(getCapabilitiesSharedPreferences().getString(key, "00"));
-                if (key.equals("notificationCapabilities"))
-                    this.notificationCapabilities = (byte)getCapabilitiesSharedPreferences().getInt(key, -0x01);
-                if (key.equals("notificationConstraints"))
-                    this.notificationConstraints = ByteBuffer.wrap(GB.hexStringToByteArray(
-                                    getCapabilitiesSharedPreferences().getString(
-                                            key,
-                                            GB.hexdump(Notifications.defaultConstraints)
-                    )));
-                if (key.equals("maxContactsCount"))
-                    this.maxContactsCount = getCapabilitiesSharedPreferences().getInt(key, 0);
+                // These are the non-numeric capabilities, which have been set already
             }
         }
     }
@@ -120,11 +128,25 @@ public class HuaweiCoordinator {
             session.getHuaweiWorkoutPaceSampleDao().queryBuilder().where(
                     HuaweiWorkoutPaceSampleDao.Properties.WorkoutId.eq(sample.getWorkoutId())
             ).buildDelete().executeDeleteWithoutDetachingEntities();
+
+            session.getHuaweiWorkoutSwimSegmentsSampleDao().queryBuilder().where(
+                    HuaweiWorkoutSwimSegmentsSampleDao.Properties.WorkoutId.eq(sample.getWorkoutId())
+            ).buildDelete().executeDeleteWithoutDetachingEntities();
         }
 
         session.getHuaweiWorkoutSummarySampleDao().queryBuilder().where(HuaweiWorkoutSummarySampleDao.Properties.DeviceId.eq(deviceId)).buildDelete().executeDeleteWithoutDetachingEntities();
 
         session.getBaseActivitySummaryDao().queryBuilder().where(BaseActivitySummaryDao.Properties.DeviceId.eq(deviceId)).buildDelete().executeDeleteWithoutDetachingEntities();
+
+        QueryBuilder<HuaweiDictData> qb3 = session.getHuaweiDictDataDao().queryBuilder();
+        List<HuaweiDictData> dictData = qb3.where(HuaweiDictDataDao.Properties.DeviceId.eq(deviceId)).build().list();
+        for (HuaweiDictData data : dictData) {
+            session.getHuaweiDictDataValuesDao().queryBuilder().where(
+                    HuaweiDictDataValuesDao.Properties.DictId.eq(data.getDictId())
+            ).buildDelete().executeDeleteWithoutDetachingEntities();
+        }
+
+        session.getHuaweiDictDataDao().queryBuilder().where(HuaweiDictDataDao.Properties.DeviceId.eq(deviceId)).buildDelete().executeDeleteWithoutDetachingEntities();
     }
 
     private SharedPreferences getCapabilitiesSharedPreferences() {
@@ -283,6 +305,11 @@ public class HuaweiCoordinator {
             deviceSpecificSettings.addRootScreen(R.xml.devicesettings_contacts);
         }
 
+        //Music
+        if (supportsMusicUploading() && getMusicInfoParams() != null && device.isConnected()) {
+            deviceSpecificSettings.addRootScreen(R.xml.devicesettings_musicmanagement);
+        }
+
         // Time
         if (supportsDateFormat()) {
             final List<Integer> dateTime = deviceSpecificSettings.addRootScreen(DeviceSpecificSettingsScreen.DATE_TIME);
@@ -426,6 +453,14 @@ public class HuaweiCoordinator {
         return supportsHeartRate() || getForceOption(gbDevice, PREF_FORCE_ENABLE_HEARTRATE_SUPPORT);
     }
 
+    public boolean supportsHeartRateZones() {
+        return supportsCommandForService(0x07, 0x13);
+    }
+
+    public boolean supportsExtendedHeartRateZones() {
+        return supportsCommandForService(0x07, 0x21);
+    }
+
     public boolean supportsFitnessRestHeartRate() {
         return supportsCommandForService(0x07, 0x23);
     }
@@ -452,6 +487,7 @@ public class HuaweiCoordinator {
     // 0x43 - SupportTemperatureStudy
     public boolean supportsTemperature() { return supportsExpandCapability(0x1d); }
 
+    public boolean supportsBloodPressure() { return supportsExpandCapability(0x3b); }
 
     public boolean supportsEventAlarm() {
         return supportsCommandForService(0x08, 0x01);
@@ -492,6 +528,8 @@ public class HuaweiCoordinator {
 
     public boolean supportsAppParams(){ return supportsCommandForService(0x2a, 0x06);}
 
+    public boolean supportsMusicUploading(){ return supportsCommandForService(0x25, 0x04);}
+
     public boolean supportsWeather() {
         return supportsCommandForService(0x0f, 0x01);
     }
@@ -504,6 +542,10 @@ public class HuaweiCoordinator {
         return supportsCommandForService(0x0f, 0x06);
     }
 
+    public boolean supportsWeatherErrorSimple() {
+        return supportsCommandForService(0x0f, 0x07);
+    }
+
     public boolean supportsWeatherForecasts() {
         return supportsCommandForService(0x0f, 0x08);
     }
@@ -514,6 +556,10 @@ public class HuaweiCoordinator {
 
     public boolean supportsWeatherTides() {
         return supportsCommandForService(0x0f, 0x0b);
+    }
+
+    public boolean supportsWeatherErrorExtended() {
+        return supportsCommandForService(0x0f, 0x0c);
     }
 
     public boolean supportsWeatherUvIndex() {
@@ -572,6 +618,12 @@ public class HuaweiCoordinator {
         return false;
     }
 
+    public boolean supportsTrack() {
+        if (supportsExpandCapability())
+            return supportsExpandCapability(0x36);
+        return false;
+    }
+
     public boolean supportsCalendar() {
         if (supportsExpandCapability())
             return supportsExpandCapability(171) || supportsExpandCapability(184);
@@ -583,6 +635,25 @@ public class HuaweiCoordinator {
             return supportsExpandCapability(109);
         return false;
     }
+
+    public boolean supportsUnknownGender() {
+        if (supportsExpandCapability())
+            return supportsExpandCapability(0x57);
+        return false;
+    }
+
+    public boolean supportsPrecisionWeight() {
+        if (supportsExpandCapability())
+            return supportsExpandCapability(0xb3);
+        return false;
+    }
+
+    public boolean supportsMoreMusic() {
+        if (supportsExpandCapability())
+            return supportsExpandCapability(122);
+        return false;
+    }
+
 
     public boolean supportsPromptPushMessage () {
 //              do not ask for capabilities under specific condition
@@ -664,15 +735,30 @@ public class HuaweiCoordinator {
     public String[] getSupportedLanguageSettings(GBDevice device) {
         return new String[]{
                 "auto",
+                "ar_SA",
                 "cs_CZ",
+                "da_DK",
                 "de_DE",
+                "el_GR",
+                "en_GB",
                 "en_US",
                 "es_ES",
                 "fr_FR",
+                "he_IL",
                 "it_IT",
+                "id_ID",
+                "ko_KO",
+                "nl_NL",
+                "pl_PL",
+                "pt_PT",
                 "pt_BR",
+                "ro_RO",
                 "ru_RU",
+                "sv_SE",
+                "th_TH",
+                "ja_JP",
                 "tr_TR",
+                "uk_UA",
                 "zh_CN",
                 "zh_TW",
         };
@@ -698,6 +784,23 @@ public class HuaweiCoordinator {
     public App.AppDeviceParams getAppDeviceParams() {
         return appDeviceParams;
     }
+
+    public void setExtendedMusicInfoParams(HuaweiMusicUtils.MusicCapabilities musicDeviceParams) {
+        LOG.info(musicDeviceParams.toString());
+        this.musicExtendedDeviceParams = musicDeviceParams;
+    }
+    public HuaweiMusicUtils.MusicCapabilities getExtendedMusicInfoParams() {
+        return musicExtendedDeviceParams;
+    }
+
+    public void setMusicInfoParams(HuaweiMusicUtils.MusicCapabilities musicDeviceParams) {
+        LOG.info(musicDeviceParams.toString());
+        this.musicDeviceParams = musicDeviceParams;
+    }
+    public HuaweiMusicUtils.MusicCapabilities getMusicInfoParams() {
+        return musicDeviceParams;
+    }
+
 
     public Class<? extends Activity> getAppManagerActivity() {
         return AppManagerActivity.class;

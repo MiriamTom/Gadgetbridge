@@ -219,12 +219,36 @@ public class HuaweiTLV {
         throw new HuaweiPacket.MissingTagException(tag);
     }
 
+    public byte[] getBytes(int tag, byte[] defaultValue) {
+        try {
+            return getBytes(tag);
+        } catch (HuaweiPacket.MissingTagException e) {
+            return defaultValue;
+        }
+    }
+
     public Byte getByte(int tag) throws HuaweiPacket.MissingTagException {
         return getBytes(tag)[0];
     }
 
+    public Byte getByte(int tag, Byte defaultValue) {
+        try {
+            return getByte(tag);
+        } catch (HuaweiPacket.MissingTagException e) {
+            return defaultValue;
+        }
+    }
+
     public Boolean getBoolean(int tag) throws HuaweiPacket.MissingTagException {
         return getBytes(tag)[0] == 1;
+    }
+
+    public Boolean getBoolean(int tag, Boolean defaultValue) {
+        try {
+            return getBoolean(tag);
+        } catch (HuaweiPacket.MissingTagException e) {
+            return defaultValue;
+        }
     }
 
     public Integer getInteger(int tag) throws HuaweiPacket.MissingTagException {
@@ -241,6 +265,28 @@ public class HuaweiTLV {
 
     public Short getShort(int tag) throws HuaweiPacket.MissingTagException {
         return ByteBuffer.wrap(getBytes(tag)).getShort();
+    }
+
+    public Short getShort(int tag, Short defaultValue) {
+        try {
+            return getShort(tag);
+        } catch (HuaweiPacket.MissingTagException e) {
+            return defaultValue;
+        }
+    }
+
+    public Long getLong(int tag) throws HuaweiPacket.MissingTagException {
+        return ByteBuffer.wrap(getBytes(tag)).getLong();
+    }
+
+    public Integer getAsInteger(int tag) throws HuaweiPacket.MissingTagException {
+        byte[] bytes = getBytes(tag);
+        if(bytes.length == 1) {
+            return bytes[0] & 0xFF;
+        } else if(bytes.length == 2) {
+            return ByteBuffer.wrap(getBytes(tag)).getShort() & 0xFFFF;
+        }
+        return ByteBuffer.wrap(getBytes(tag)).getInt();
     }
 
     public String getString(int tag) throws HuaweiPacket.MissingTagException {

@@ -16,15 +16,16 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>. */
 package nodomain.freeyourgadget.gadgetbridge.service.devices.huawei;
 
+import android.content.Context;
 import android.widget.Toast;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -35,10 +36,14 @@ import de.greenrobot.dao.query.CloseableListIterator;
 import de.greenrobot.dao.query.QueryBuilder;
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
 import nodomain.freeyourgadget.gadgetbridge.R;
+import nodomain.freeyourgadget.gadgetbridge.activities.SettingsActivity;
+import nodomain.freeyourgadget.gadgetbridge.activities.workouts.entries.ActivitySummaryProgressEntry;
 import nodomain.freeyourgadget.gadgetbridge.activities.workouts.entries.ActivitySummaryTableRowEntry;
 import nodomain.freeyourgadget.gadgetbridge.activities.workouts.entries.ActivitySummaryValue;
 import nodomain.freeyourgadget.gadgetbridge.database.DBHandler;
 import nodomain.freeyourgadget.gadgetbridge.database.DBHelper;
+import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HeartRateZonesConfig;
+import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiSportHRZones;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.Workout;
 import nodomain.freeyourgadget.gadgetbridge.entities.BaseActivitySummary;
 import nodomain.freeyourgadget.gadgetbridge.entities.DaoSession;
@@ -49,12 +54,15 @@ import nodomain.freeyourgadget.gadgetbridge.entities.HuaweiWorkoutPaceSample;
 import nodomain.freeyourgadget.gadgetbridge.entities.HuaweiWorkoutPaceSampleDao;
 import nodomain.freeyourgadget.gadgetbridge.entities.HuaweiWorkoutSummarySample;
 import nodomain.freeyourgadget.gadgetbridge.entities.HuaweiWorkoutSummarySampleDao;
+import nodomain.freeyourgadget.gadgetbridge.entities.HuaweiWorkoutSwimSegmentsSample;
+import nodomain.freeyourgadget.gadgetbridge.entities.HuaweiWorkoutSwimSegmentsSampleDao;
 import nodomain.freeyourgadget.gadgetbridge.entities.User;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivityKind;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivitySummaryData;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivitySummaryEntries;
 import nodomain.freeyourgadget.gadgetbridge.model.ActivitySummaryParser;
+import nodomain.freeyourgadget.gadgetbridge.model.ActivityUser;
 import nodomain.freeyourgadget.gadgetbridge.util.GB;
 import nodomain.freeyourgadget.gadgetbridge.util.StringUtils;
 
@@ -69,9 +77,11 @@ public class HuaweiWorkoutGbParser implements ActivitySummaryParser {
     // TODO: Might be nicer to propagate the exceptions, so they can be handled upstream
 
     private final GBDevice gbDevice;
+    private final Context context;
 
-    public HuaweiWorkoutGbParser(final GBDevice gbDevice) {
+    public HuaweiWorkoutGbParser(final GBDevice gbDevice, final Context context) {
         this.gbDevice = gbDevice;
+        this.context = context;
     }
 
     @Override
@@ -110,11 +120,13 @@ public class HuaweiWorkoutGbParser implements ActivitySummaryParser {
         RUNNING(1, ActivityKind.RUNNING),
         WALKING(2, ActivityKind.WALKING),
         CYCLING(3, ActivityKind.CYCLING),
+        MOUNTAIN_HIKE(4, ActivityKind.MOUNTAIN_HIKE),
         INDOOR_RUN(5, ActivityKind.INDOOR_RUNNING),
         POOL_SWIM(6, ActivityKind.POOL_SWIM),
         INDOOR_CYCLE(7, ActivityKind.INDOOR_CYCLING),
         OPEN_WATER_SWIM(8, ActivityKind.SWIMMING_OPENWATER),
         INDOOR_WALK(13, ActivityKind.INDOOR_WALKING),
+        HIKING(14, ActivityKind.HIKING),
         JUMP_ROPING(21, ActivityKind.JUMP_ROPING),
         PING_PONG(128, ActivityKind.PINGPONG),
         BADMINTON(129, ActivityKind.BADMINTON),
@@ -309,6 +321,20 @@ public class HuaweiWorkoutGbParser implements ActivitySummaryParser {
             return ActivityKind.UNKNOWN;
     }
 
+    private String getSwimStyle(byte swimType) {
+        switch (swimType) {
+            case 1:
+                return "breaststroke";
+            case 3:
+                return "butterfly";
+            case 4:
+                return "backstroke";
+            case 5:
+                return "medley";
+        }
+        return "freestyle";
+    }
+
     public void parseWorkout(Long workoutId) {
         LOG.debug("Parsing workout ID {}", workoutId);
         if (workoutId == null)
@@ -356,8 +382,12 @@ public class HuaweiWorkoutGbParser implements ActivitySummaryParser {
             );
             List<HuaweiWorkoutDataSample> dataSamples = qbData.build().list();
 
-            QueryBuilder<HuaweiWorkoutPaceSample> qbPace = session.getHuaweiWorkoutPaceSampleDao().queryBuilder().where(
+            QueryBuilder<HuaweiWorkoutPaceSample> qbPace = session.getHuaweiWorkoutPaceSampleDao().queryBuilder().orderAsc(HuaweiWorkoutPaceSampleDao.Properties.PaceIndex).where(
                     HuaweiWorkoutPaceSampleDao.Properties.WorkoutId.eq(summary.getWorkoutId())
+            );
+
+            QueryBuilder<HuaweiWorkoutSwimSegmentsSample> qbSegments = session.getHuaweiWorkoutSwimSegmentsSampleDao().queryBuilder().orderAsc(HuaweiWorkoutSwimSegmentsSampleDao.Properties.SegmentIndex).where(
+                    HuaweiWorkoutSwimSegmentsSampleDao.Properties.WorkoutId.eq(summary.getWorkoutId())
             );
 
             ActivityKind type = huaweiTypeToGbType(summary.getType());
@@ -368,16 +398,11 @@ public class HuaweiWorkoutGbParser implements ActivitySummaryParser {
             summaryData.add(ActivitySummaryEntries.DISTANCE_METERS, summary.getDistance(), ActivitySummaryEntries.UNIT_METERS);
             summaryData.add(ActivitySummaryEntries.STEPS, summary.getStepCount(), ActivitySummaryEntries.UNIT_STEPS);
             summaryData.add(ActivitySummaryEntries.ACTIVE_SECONDS, summary.getDuration(), ActivitySummaryEntries.UNIT_SECONDS);
-            summaryData.add(ActivitySummaryEntries.STATUS, summary.getStatus() & 0xFF, ActivitySummaryEntries.UNIT_NONE);
+            //summaryData.add(ActivitySummaryEntries.STATUS, summary.getStatus() & 0xFF, ActivitySummaryEntries.UNIT_NONE);
             summaryData.add(ActivitySummaryEntries.TYPE, summary.getType() & 0xFF, ActivitySummaryEntries.UNIT_NONE);
 
             if (summary.getStrokes() != -1) {
                 summaryData.add(ActivitySummaryEntries.STROKES, summary.getStrokes(), ActivitySummaryEntries.UNIT_STROKES);
-            }
-
-            if (summary.getAvgStrokeRate() != -1) {
-                // TODO: find out unit
-                summaryData.add(ActivitySummaryEntries.STROKE_RATE_AVG, summary.getAvgStrokeRate(), ActivitySummaryEntries.UNIT_NONE);
             }
 
             if (summary.getPoolLength() != -1) {
@@ -388,9 +413,43 @@ public class HuaweiWorkoutGbParser implements ActivitySummaryParser {
                 summaryData.add(ActivitySummaryEntries.LAPS, summary.getLaps(), ActivitySummaryEntries.UNIT_LAPS);
             }
 
-            if (summary.getAvgSwolf() != -1) {
-                summaryData.add(ActivitySummaryEntries.SWOLF_AVG, summary.getAvgSwolf(), ActivitySummaryEntries.UNIT_NONE);
+            if(summary.getWorkoutLoad() > 0) {
+                summaryData.add(ActivitySummaryEntries.WORKOUT_LOAD, summary.getWorkoutLoad(), ActivitySummaryEntries.UNIT_NONE);
             }
+
+            if(summary.getWorkoutAerobicEffect() > 0) {
+                summaryData.add(ActivitySummaryEntries.TRAINING_EFFECT_AEROBIC, summary.getWorkoutAerobicEffect() / 10.0, ActivitySummaryEntries.UNIT_NONE);
+            }
+
+            if(summary.getWorkoutAnaerobicEffect() >= 0) {
+                summaryData.add(ActivitySummaryEntries.TRAINING_EFFECT_ANAEROBIC, summary.getWorkoutAnaerobicEffect() / 10.0, ActivitySummaryEntries.UNIT_NONE);
+            }
+
+            if(summary.getRecoveryTime() > 0) {
+                summaryData.add(ActivitySummaryEntries.RECOVERY_TIME, summary.getRecoveryTime() / 60.0, ActivitySummaryEntries.UNIT_HOURS);
+            }
+
+            if(summary.getSwimType() != -1) {
+                summaryData.add(ActivitySummaryEntries.SWIM_STYLE, getSwimStyle(summary.getSwimType()));
+            }
+
+            if(summary.getMaxMET() > 0) {
+                int value = (int) (((float) summary.getMaxMET() * 3.5f)) / 65536;
+                summaryData.add(ActivitySummaryEntries.MAXIMUM_OXYGEN_UPTAKE, value, ActivitySummaryEntries.UNIT_ML_KG_MIN);
+            }
+
+
+            Integer summaryMinAltitude = summary.getMinAltitude();
+            Integer summaryMaxAltitude = summary.getMaxAltitude();
+            Integer elevationGain = summary.getElevationGain();
+            Integer elevationLoss = summary.getElevationLoss();
+
+            int minHeartRatePeak = summary.getMinHeartRatePeak() & 0xff;
+            int maxHeartRatePeak = summary.getMaxHeartRatePeak() & 0xff;
+
+            int avgStrokeRate = summary.getAvgStrokeRate();
+
+            int avgSwolf = summary.getAvgSwolf();
 
             boolean unknownData = false;
             if (!dataSamples.isEmpty()) {
@@ -441,7 +500,36 @@ public class HuaweiWorkoutGbParser implements ActivitySummaryParser {
                 int sumAltitudeUp = 0;
                 int sumAltitudeDown = 0;
 
+                //NOTE: The method of retrieving HR zones from the Huawei watch is not discovered. It may not return zones.
+                // So they are calculated based on config.
+                HeartRateZonesConfig HRZonesCfg = null;
+                Integer zoneType = HuaweiWorkoutUtils.getHRZoneTypeByActivity(type);
+                int zoneCalculateMethod = summary.getHrZoneType();
+                LOG.info("Workout HR Zone Calculate Type: {}", zoneCalculateMethod);
+                if(zoneType != null && HeartRateZonesConfig.isCalculateMethodValidFroType(zoneType, zoneCalculateMethod)) {
+                    ActivityUser activityUser = new ActivityUser();
+                    HuaweiSportHRZones hrSportZones = new HuaweiSportHRZones(activityUser.getAge());
+                    HRZonesCfg = hrSportZones.getHRZonesConfigByType(zoneType);
+                }
+
+                int dataDelta = 5;
+                if (dataSamples.size() >= 2 && dataSamples.get(1).getTimestamp() - dataSamples.get(0).getTimestamp() >= 40) {
+                    dataDelta = 60;
+                }
+
+                int[] HRZones = new int[5];
+
+                int dataIdx = 0;
                 for (HuaweiWorkoutDataSample dataSample : dataSamples) {
+
+                    if(HRZonesCfg != null) {
+                        int zoneIdx = HRZonesCfg.getZoneByMethod(dataSample.getHeartRate() & 0xFF, zoneCalculateMethod);
+                        if (zoneIdx != -1 && dataIdx < (dataSamples.size() - 1)) {
+                                 HRZones[zoneIdx] += dataDelta;
+                        }
+                        dataIdx++;
+                    }
+
                     if (dataSample.getSpeed() != -1) {
                         speed += dataSample.getSpeed();
                         speedCount += 1;
@@ -544,6 +632,33 @@ public class HuaweiWorkoutGbParser implements ActivitySummaryParser {
                         unknownData = true;
                 }
 
+
+                if(HRZonesCfg != null) {
+                    final double totalTime = Arrays.stream(HRZones).sum();
+                    final List<String> zoneOrder = Arrays.asList(ActivitySummaryEntries.HR_ZONE_WARM_UP, ActivitySummaryEntries.HR_ZONE_FAT_BURN, ActivitySummaryEntries.HR_ZONE_AEROBIC, ActivitySummaryEntries.HR_ZONE_ANAEROBIC, ActivitySummaryEntries.HR_ZONE_EXTREME);
+                    final int[] zoneColors = new int[]{
+                            context.getResources().getColor(R.color.hr_zone_warm_up_color),
+                            context.getResources().getColor(R.color.hr_zone_easy_color),
+                            context.getResources().getColor(R.color.hr_zone_aerobic_color),
+                            context.getResources().getColor(R.color.hr_zone_threshold_color),
+                            context.getResources().getColor(R.color.hr_zone_maximum_color),
+                    };
+                    for (int i = zoneOrder.size() - 1; i >= 0; i--) {
+                        double timeInZone = HRZones[i];
+                        LOG.info("Zone: {} {}", zoneOrder.get(i), timeInZone);
+                        summaryData.add(
+                                zoneOrder.get(i),
+                                new ActivitySummaryProgressEntry(
+                                        timeInZone,
+                                        ActivitySummaryEntries.UNIT_SECONDS,
+                                        (int) (100 * timeInZone / totalTime),
+                                        zoneColors[i]
+                                )
+                        );
+                    }
+                }
+
+
                 // Average the things that should be averaged
                 if (speedCount > 0)
                     speed = speed / speedCount;
@@ -577,8 +692,6 @@ public class HuaweiWorkoutGbParser implements ActivitySummaryParser {
                 }
 
                 if (stepRatePresent) {
-                    summaryData.add(ActivitySummaryEntries.STEP_RATE_SUM, stepRate, ActivitySummaryEntries.UNIT_SPM);
-
                     summaryData.add(ActivitySummaryEntries.STEP_RATE_AVG, avgStepRate, ActivitySummaryEntries.UNIT_SPM);
                 }
 
@@ -615,23 +728,29 @@ public class HuaweiWorkoutGbParser implements ActivitySummaryParser {
                 }
 
                 if (swolfCount > 0) {
-                    summaryData.add(ActivitySummaryEntries.SWOLF_AVG, swolf, ActivitySummaryEntries.UNIT_NONE);
+                    if(avgSwolf == -1) {
+                        avgSwolf = swolf;
+                    }
                     summaryData.add(ActivitySummaryEntries.SWOLF_MAX, maxSwolf, ActivitySummaryEntries.UNIT_NONE);
                     summaryData.add(ActivitySummaryEntries.SWOLF_MIN, minSwolf, ActivitySummaryEntries.UNIT_NONE);
                 }
 
                 if (strokeRateCount > 0) {
-                    // TODO: find out unit?
-                    summaryData.add(ActivitySummaryEntries.STROKE_RATE_AVG, strokeRate, ActivitySummaryEntries.UNIT_NONE);
-
-                    // TODO: find out unit?
-                    summaryData.add(ActivitySummaryEntries.STROKE_RATE_MAX, maxStrokeRate, ActivitySummaryEntries.UNIT_NONE);
+                    if(avgStrokeRate == -1) {
+                        avgStrokeRate = strokeRate;
+                    }
+                    summaryData.add(ActivitySummaryEntries.STROKE_RATE_MAX, maxStrokeRate, ActivitySummaryEntries.UNIT_STROKES_PER_MINUTE);
                 }
 
                 if (heartRateCount > 0) {
                     summaryData.add(ActivitySummaryEntries.HR_AVG, heartRate, ActivitySummaryEntries.UNIT_BPM);
-                    summaryData.add(ActivitySummaryEntries.HR_MAX, maxHeartRate, ActivitySummaryEntries.UNIT_BPM);
-                    summaryData.add(ActivitySummaryEntries.HR_MIN, minHeartRate, ActivitySummaryEntries.UNIT_BPM);
+                    if(minHeartRatePeak == 0) {
+                        minHeartRatePeak = minHeartRate;
+                    }
+
+                    if(maxHeartRatePeak == 0) {
+                        maxHeartRatePeak = maxHeartRate;
+                    }
                 }
 
                 if (sumCalories > 0) {
@@ -646,12 +765,54 @@ public class HuaweiWorkoutGbParser implements ActivitySummaryParser {
 
                 if (altitudeCount > 0) {
                     summaryData.add(ActivitySummaryEntries.ALTITUDE_AVG, avgAltitude / 10.0f, ActivitySummaryEntries.UNIT_METERS);
-                    summaryData.add(ActivitySummaryEntries.ALTITUDE_MIN, minAltitude / 10.0f, ActivitySummaryEntries.UNIT_METERS);
-                    summaryData.add(ActivitySummaryEntries.ALTITUDE_MAX, maxAltitude / 10.0f, ActivitySummaryEntries.UNIT_METERS);
-                    summaryData.add(ActivitySummaryEntries.ELEVATION_GAIN, sumAltitudeUp / 10.0f, ActivitySummaryEntries.UNIT_METERS);
-                    summaryData.add(ActivitySummaryEntries.ELEVATION_LOSS, sumAltitudeDown / 10.0f, ActivitySummaryEntries.UNIT_METERS);
+
+                    if(summaryMinAltitude == null) {
+                        summaryMinAltitude = minAltitude;
+                    }
+
+                    if(summaryMaxAltitude == null) {
+                        summaryMaxAltitude = maxAltitude;
+                    }
+
+                    if(elevationGain == null) {
+                        elevationGain = sumAltitudeUp;
+                    }
+
+                    if(elevationLoss == null) {
+                        elevationLoss = sumAltitudeDown;
+                    }
                 }
             }
+
+            if(avgSwolf > 0) {
+                summaryData.add(ActivitySummaryEntries.SWOLF_AVG, avgSwolf, ActivitySummaryEntries.UNIT_NONE);
+            }
+
+            if (avgStrokeRate > 0) {
+                summaryData.add(ActivitySummaryEntries.STROKE_RATE_AVG, avgStrokeRate, ActivitySummaryEntries.UNIT_STROKES_PER_MINUTE);
+            }
+
+            if (minHeartRatePeak > 0) {
+                summaryData.add(ActivitySummaryEntries.HR_MIN, minHeartRatePeak, ActivitySummaryEntries.UNIT_BPM);
+            }
+            if (maxHeartRatePeak > 0) {
+                summaryData.add(ActivitySummaryEntries.HR_MAX, maxHeartRatePeak, ActivitySummaryEntries.UNIT_BPM);
+            }
+
+            if(summaryMinAltitude != null) {
+                summaryData.add(ActivitySummaryEntries.ALTITUDE_MIN, summaryMinAltitude / 10.0f, ActivitySummaryEntries.UNIT_METERS);
+            }
+
+            if(summaryMaxAltitude != null) {
+                summaryData.add(ActivitySummaryEntries.ALTITUDE_MAX, summaryMaxAltitude / 10.0f, ActivitySummaryEntries.UNIT_METERS);
+            }
+            if(elevationGain != null) {
+                summaryData.add(ActivitySummaryEntries.ELEVATION_GAIN, elevationGain / 10.0f, ActivitySummaryEntries.UNIT_METERS);
+            }
+            if(elevationLoss != null) {
+                summaryData.add(ActivitySummaryEntries.ELEVATION_LOSS, elevationLoss / 10.0f, ActivitySummaryEntries.UNIT_METERS);
+            }
+
 
             final LinkedHashMap<String, ActivitySummaryTableRowEntry> pacesTable = new LinkedHashMap<>();
 
@@ -661,46 +822,53 @@ public class HuaweiWorkoutGbParser implements ActivitySummaryParser {
                             Arrays.asList(
                                     new ActivitySummaryValue("#", ActivitySummaryEntries.UNIT_RAW_STRING),
                                     new ActivitySummaryValue("distance"),
-                                    new ActivitySummaryValue("watchface_dialog_widget_type"),
-                                    new ActivitySummaryValue("Pace"),
-                                    new ActivitySummaryValue("paceCorrection")
+                                    new ActivitySummaryValue("Pace")
                             ),
                             true,
                             true
                     )
             );
 
-            try (CloseableListIterator<HuaweiWorkoutPaceSample> it = qbPace.build().listIterator()) {
-                HashMap<Byte, Integer> typeCount = new HashMap<>();
-                HashMap<Byte, Integer> typePace = new HashMap<>();
+            String measurementSystem = GBApplication.getPrefs().getString(SettingsActivity.PREF_MEASUREMENT_SYSTEM, "metric");
 
+            byte unitType = (byte) (measurementSystem.equals("metric") ? 0 : 1);
+            try (CloseableListIterator<HuaweiWorkoutPaceSample> it = qbPace.build().listIterator()) {
+
+                int paceCount = 0;
+                int paceSum = 0;
+                int paceFastest = Integer.MAX_VALUE;
+                int paceSlowest = 0;
+
+                int currentIndex = 1;
                 while (it.hasNext()) {
                     int index = it.nextIndex();
                     HuaweiWorkoutPaceSample sample = it.next();
 
-                    int count = 1;
+                    if (sample.getType() != unitType)
+                        continue;
+
                     int pace = sample.getPace();
 
-                    Integer previousCount = typeCount.get(sample.getType());
-                    Integer previousPace = typePace.get(sample.getType());
-                    if (previousCount != null)
-                        count += previousCount;
-                    if (previousPace != null)
-                        pace += previousPace;
-                    typeCount.put(sample.getType(), count);
-                    typePace.put(sample.getType(), pace);
+                    paceCount++;
+                    paceSum += pace;
+
+                    if (pace < paceFastest)
+                        paceFastest = pace;
+
+                    if (pace > paceSlowest)
+                        paceSlowest = pace;
+
+                    double distance = sample.getDistance();
+
+                    if (sample.getCorrection() != null) {
+                        distance += sample.getCorrection() / 10000d;
+                    }
 
                     final List<ActivitySummaryValue> columns = new LinkedList<>();
-                    columns.add(new ActivitySummaryValue(index, ActivitySummaryEntries.UNIT_NONE));
-                    columns.add(new ActivitySummaryValue(sample.getDistance(), ActivitySummaryEntries.UNIT_KILOMETERS));
-                    columns.add(new ActivitySummaryValue(sample.getType(), ActivitySummaryEntries.UNIT_NONE)); // TODO: find out types
+                    // TODO: add proper units for type == 1. MILES and SECONDS PER MILE
+                    columns.add(new ActivitySummaryValue(currentIndex++, ActivitySummaryEntries.UNIT_NONE));
+                    columns.add(new ActivitySummaryValue(distance, ActivitySummaryEntries.UNIT_KILOMETERS));
                     columns.add(new ActivitySummaryValue(sample.getPace(), ActivitySummaryEntries.UNIT_SECONDS_PER_KM));
-
-                    if (sample.getCorrection() != 0) {
-                        columns.add(new ActivitySummaryValue(sample.getCorrection() / 10f, ActivitySummaryEntries.UNIT_METERS));
-                    } else {
-                        columns.add(new ActivitySummaryValue("stats_empty_value"));
-                    }
 
                     pacesTable.put("paces_table_" + index,
                             new ActivitySummaryTableRowEntry(
@@ -712,23 +880,100 @@ public class HuaweiWorkoutGbParser implements ActivitySummaryParser {
                     );
                 }
 
+                if (paceCount != 0 && paceSum != 0) {
+                    summaryData.add(
+                            ActivitySummaryEntries.GROUP_PACE,
+                            GBApplication.getContext().getString(R.string.fmtPaceAverage),
+                            paceSum / (float) paceCount,
+                            ActivitySummaryEntries.UNIT_SECONDS_PER_KM
+                    );
+                }
+
+                if (paceFastest != Integer.MAX_VALUE) {
+                    summaryData.add(
+                            ActivitySummaryEntries.GROUP_PACE,
+                            GBApplication.getContext().getString(R.string.maxPace),
+                            paceFastest,
+                            ActivitySummaryEntries.UNIT_SECONDS_PER_KM
+                    );
+                }
+
+                if (paceSlowest != 0) {
+                    summaryData.add(
+                            ActivitySummaryEntries.GROUP_PACE,
+                            GBApplication.getContext().getString(R.string.minPace),
+                            paceSlowest,
+                            ActivitySummaryEntries.UNIT_SECONDS_PER_KM
+                    );
+                }
+
                 if (pacesTable.size() > 1) {
                     for (final Map.Entry<String, ActivitySummaryTableRowEntry> e : pacesTable.entrySet()) {
                         summaryData.add(e.getKey(), e.getValue());
                     }
                 }
+            }
 
-                for (Byte key : typeCount.keySet()) {
-                    Integer count = typeCount.get(key);
-                    Integer pace = typePace.get(key);
-                    if (count == null || pace == null || count == 0)
+            final LinkedHashMap<String, ActivitySummaryTableRowEntry> segmentsTable = new LinkedHashMap<>();
+
+            try (CloseableListIterator<HuaweiWorkoutSwimSegmentsSample> it = qbSegments.build().listIterator()) {
+
+                int currentIndex = 1;
+                int tableIndex = 1;
+                while (it.hasNext()) {
+                    HuaweiWorkoutSwimSegmentsSample sample = it.next();
+
+                    if (sample.getType() != unitType)
                         continue;
-                    summaryData.add(
-                            ActivitySummaryEntries.GROUP_PACE,
-                            GBApplication.getContext().getString(R.string.fmtPaceTypeAverage, key),
-                            pace / (float) count,
-                            ActivitySummaryEntries.UNIT_SECONDS_PER_KM
+
+                    final List<ActivitySummaryValue> columns = new LinkedList<>();
+                    // TODO: add proper units for type == 1. MILES
+                    columns.add(new ActivitySummaryValue(currentIndex++, ActivitySummaryEntries.UNIT_NONE));
+                    columns.add(new ActivitySummaryValue(getSwimStyle(sample.getSwimType()), ActivitySummaryEntries.UNIT_NONE));
+                    columns.add(new ActivitySummaryValue(sample.getDistance(), ActivitySummaryEntries.UNIT_METERS));
+                    columns.add(new ActivitySummaryValue(sample.getTime(), ActivitySummaryEntries.UNIT_SECONDS));
+
+
+                    segmentsTable.put("segments_table_" + tableIndex++,
+                            new ActivitySummaryTableRowEntry(
+                                    ActivitySummaryEntries.GROUP_PACE,
+                                    columns,
+                                    true,
+                                    true
+                            )
                     );
+
+                    final List<ActivitySummaryValue> columns2 = new LinkedList<>();
+                    // TODO: add proper units for type == 1. MILES and SECONDS PER MILE
+                    columns2.add(new ActivitySummaryValue("", ActivitySummaryEntries.UNIT_NONE));
+                    columns2.add(new ActivitySummaryValue(sample.getStrokes(), ActivitySummaryEntries.UNIT_STROKES));
+                    columns2.add(new ActivitySummaryValue(sample.getAvgSwolf(), ActivitySummaryEntries.UNIT_NONE));
+                    columns2.add(new ActivitySummaryValue(sample.getPace(), ActivitySummaryEntries.UNIT_NONE)); //TODO: seconds / 100 meters
+
+
+
+                    segmentsTable.put("segments_table_" + tableIndex++,
+                            new ActivitySummaryTableRowEntry(
+                                    ActivitySummaryEntries.GROUP_PACE,
+                                    columns2,
+                                    false,
+                                    false
+                            )
+                    );
+                    segmentsTable.put("segments_table_" + tableIndex++,
+                            new ActivitySummaryTableRowEntry(
+                                    ActivitySummaryEntries.GROUP_PACE,
+                                    new ArrayList<>(),
+                                    false,
+                                    false
+                            )
+                    );
+                }
+
+                if (!segmentsTable.isEmpty()) {
+                    for (final Map.Entry<String, ActivitySummaryTableRowEntry> e : segmentsTable.entrySet()) {
+                        summaryData.add(e.getKey(), e.getValue());
+                    }
                 }
             }
 

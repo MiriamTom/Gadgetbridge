@@ -23,6 +23,8 @@ public class ActivityAmount {
     private short percent;
     private long totalSeconds;
     private long totalSteps;
+    private long totalDistance;
+    private long totalActiveCalories;
     private Date startDate = null;
     private Date endDate = null;
 
@@ -38,12 +40,28 @@ public class ActivityAmount {
         totalSteps += steps;
     }
 
+    public void addDistance(long distance) {
+        totalDistance += distance;
+    }
+
+    public void addActiveCalories(long activeCalories) {
+        totalActiveCalories += activeCalories;
+    }
+
     public long getTotalSeconds() {
         return totalSeconds;
     }
 
     public long getTotalSteps() {
         return totalSteps;
+    }
+
+    public long getTotalDistance() {
+        return totalDistance;
+    }
+
+    public long getTotalActiveCalories() {
+        return totalActiveCalories;
     }
 
     public ActivityKind getActivityKind() {

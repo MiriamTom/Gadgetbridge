@@ -56,7 +56,9 @@ import nodomain.freeyourgadget.gadgetbridge.model.HeartRateSample;
 import nodomain.freeyourgadget.gadgetbridge.model.HrvSummarySample;
 import nodomain.freeyourgadget.gadgetbridge.model.HrvValueSample;
 import nodomain.freeyourgadget.gadgetbridge.model.PaiSample;
-import nodomain.freeyourgadget.gadgetbridge.model.SleepRespiratoryRateSample;
+import nodomain.freeyourgadget.gadgetbridge.model.RespiratoryRateSample;
+import nodomain.freeyourgadget.gadgetbridge.model.RestingMetabolicRateSample;
+import nodomain.freeyourgadget.gadgetbridge.model.SleepScoreSample;
 import nodomain.freeyourgadget.gadgetbridge.model.Spo2Sample;
 import nodomain.freeyourgadget.gadgetbridge.model.StressSample;
 import nodomain.freeyourgadget.gadgetbridge.model.TemperatureSample;
@@ -226,12 +228,19 @@ public interface DeviceCoordinator {
     boolean supportsStepCounter();
     boolean supportsSpeedzones();
     boolean supportsActivityTabs();
+    boolean supportsActiveCalories();
 
     /**
      * Returns true if measurement and fetching of body temperature is supported by the device
      * (with this coordinator).
      */
     boolean supportsTemperatureMeasurement();
+
+    /**
+     * Returns true if continuous temperature measurement used in device
+     * (with this coordinator).
+     */
+    boolean supportsContinuousTemperature();
 
     /**
      * Returns true if SpO2 measurement and fetching is supported by the device
@@ -262,6 +271,27 @@ public interface DeviceCoordinator {
      * (light, moderate, high).
      */
     boolean supportsPaiTime();
+
+    /**
+     * Returns true if the device is capable of providing the time contribution for light PAI type.
+     */
+    boolean supportsPaiLow();
+
+    /**
+     * Returns the PAI target - usually 100.
+     */
+    int getPaiTarget();
+
+    /**
+     * Indicates whether the device supports respiratory rate tracking.
+     */
+    boolean supportsRespiratoryRate();
+
+    /**
+     * Indicates whether the device tracks respiratory rate during the day, will be false
+     * if only during the night.
+     */
+    boolean supportsDayRespiratoryRate();
 
     /**
      * Returns true if sleep respiratory rate measurement and fetching is supported by
@@ -360,12 +390,16 @@ public interface DeviceCoordinator {
     /**
      * Returns the sample provider for sleep respiratory rate data, for the device being supported.
      */
-    TimeSampleProvider<? extends SleepRespiratoryRateSample> getSleepRespiratoryRateSampleProvider(GBDevice device, DaoSession session);
+    TimeSampleProvider<? extends RespiratoryRateSample> getRespiratoryRateSampleProvider(GBDevice device, DaoSession session);
 
     /**
      * Returns the sample provider for weight data, for the device being supported.
      */
     TimeSampleProvider<? extends WeightSample> getWeightSampleProvider(GBDevice device, DaoSession session);
+
+    TimeSampleProvider<? extends RestingMetabolicRateSample> getRestingMetabolicRateProvider(GBDevice device, DaoSession session);
+
+    TimeSampleProvider<? extends SleepScoreSample> getSleepScoreProvider(GBDevice device, DaoSession session);
 
     /**
      * Returns the {@link ActivitySummaryParser} for the device being supported.
@@ -456,6 +490,11 @@ public interface DeviceCoordinator {
      * @return
      */
     boolean supportsHeartRateMeasurement(GBDevice device);
+
+    /**
+     * Returns true if the given device supports resting heart rate measurements.
+     */
+    boolean supportsHeartRateRestingMeasurement(GBDevice device);
 
     /**
      * Returns true if the device supports triggering manual one-shot heart rate measurements.
@@ -559,6 +598,11 @@ public interface DeviceCoordinator {
      * Indicates whether the device supports Awake sleep tracking.
      */
     boolean supportsAwakeSleep();
+
+    /**
+     * Indicates whether the device supports determining a sleep score in a 0-100 range.
+     */
+    boolean supportsSleepScore();
 
     /**
      * Indicates whether the device supports current weather and/or weather

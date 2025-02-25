@@ -44,6 +44,10 @@ import nodomain.freeyourgadget.gadgetbridge.model.ActivitySummaryParser;
 import nodomain.freeyourgadget.gadgetbridge.model.BodyEnergySample;
 import nodomain.freeyourgadget.gadgetbridge.model.HrvSummarySample;
 import nodomain.freeyourgadget.gadgetbridge.model.HrvValueSample;
+import nodomain.freeyourgadget.gadgetbridge.model.PaiSample;
+import nodomain.freeyourgadget.gadgetbridge.model.RespiratoryRateSample;
+import nodomain.freeyourgadget.gadgetbridge.model.RestingMetabolicRateSample;
+import nodomain.freeyourgadget.gadgetbridge.model.SleepScoreSample;
 import nodomain.freeyourgadget.gadgetbridge.model.Spo2Sample;
 import nodomain.freeyourgadget.gadgetbridge.model.StressSample;
 import nodomain.freeyourgadget.gadgetbridge.model.Vo2MaxSample;
@@ -148,6 +152,31 @@ public abstract class GarminCoordinator extends AbstractBLEDeviceCoordinator {
     }
 
     @Override
+    public TimeSampleProvider<? extends PaiSample> getPaiSampleProvider(final GBDevice device, final DaoSession session) {
+        return new GarminPaiSampleProvider(device, session);
+    }
+
+    @Override
+    public TimeSampleProvider<? extends RespiratoryRateSample> getRespiratoryRateSampleProvider(final GBDevice device, final DaoSession session) {
+        return new GarminRespiratoryRateSampleProvider(device, session);
+    }
+
+    @Override
+    public TimeSampleProvider<? extends RestingMetabolicRateSample> getRestingMetabolicRateProvider(final GBDevice device, final DaoSession session) {
+        return new GarminRestingMetabolicRateSampleProvider(device, session);
+    }
+
+    @Override
+    public TimeSampleProvider<? extends SleepScoreSample> getSleepScoreProvider(final GBDevice device, final DaoSession session) {
+        return new GarminSleepStatsSampleProvider(device, session);
+    }
+
+    @Override
+    public GarminHeartRateRestingSampleProvider getHeartRateRestingSampleProvider(final GBDevice device, final DaoSession session) {
+        return new GarminHeartRateRestingSampleProvider(device, session);
+    }
+
+    @Override
     public DeviceSpecificSettings getDeviceSpecificSettings(final GBDevice device) {
         final DeviceSpecificSettings deviceSpecificSettings = new DeviceSpecificSettings();
 
@@ -234,6 +263,11 @@ public abstract class GarminCoordinator extends AbstractBLEDeviceCoordinator {
     }
 
     @Override
+    public boolean supportsActiveCalories() {
+        return true;
+    }
+
+    @Override
     public int[] getStressRanges() {
         // 1-25 = relaxed
         // 26-50 = low
@@ -244,6 +278,11 @@ public abstract class GarminCoordinator extends AbstractBLEDeviceCoordinator {
 
     @Override
     public boolean supportsHeartRateMeasurement(final GBDevice device) {
+        return true;
+    }
+
+    @Override
+    public boolean supportsHeartRateRestingMeasurement(final GBDevice device) {
         return true;
     }
 
@@ -265,6 +304,47 @@ public abstract class GarminCoordinator extends AbstractBLEDeviceCoordinator {
     @Override
     public boolean supportsAwakeSleep() {
         return true;
+    }
+
+    @Override
+    public boolean supportsSleepScore() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsRespiratoryRate() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsDayRespiratoryRate() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsPai() {
+        // Intensity Minutes
+        return true;
+    }
+
+    @Override
+    public int getPaiName() {
+        return R.string.garmin_intensity_minutes;
+    }
+
+    @Override
+    public boolean supportsPaiTime() {
+        return true;
+    }
+
+    @Override
+    public boolean supportsPaiLow() {
+        return false;
+    }
+
+    @Override
+    public int getPaiTarget() {
+        return 150;
     }
 
     @Override
@@ -321,10 +401,14 @@ public abstract class GarminCoordinator extends AbstractBLEDeviceCoordinator {
     @Nullable
     @Override
     public InstallHandler findInstallHandler(Uri uri, Context context) {
+        final GarminFitFileInstallHandler fitFileInstallHandler = new GarminFitFileInstallHandler(uri, context);
+        if (fitFileInstallHandler.isValid())
+            return fitFileInstallHandler;
 
         final GarminGpxRouteInstallHandler garminGpxRouteInstallHandler = new GarminGpxRouteInstallHandler(uri, context);
         if (garminGpxRouteInstallHandler.isValid())
             return garminGpxRouteInstallHandler;
+
         return null;
     }
 }

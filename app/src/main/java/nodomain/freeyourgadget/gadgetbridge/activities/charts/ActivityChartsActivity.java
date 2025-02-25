@@ -17,6 +17,7 @@
 package nodomain.freeyourgadget.gadgetbridge.activities.charts;
 
 import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -133,6 +134,12 @@ public class ActivityChartsActivity extends AbstractChartsActivity {
         if (!coordinator.supportsVO2Max()) {
             tabList.remove("vo2max");
         }
+        if (!coordinator.supportsActiveCalories()) {
+            tabList.remove("calories");
+        }
+        if (!coordinator.supportsRespiratoryRate()) {
+            tabList.remove("respiratoryrate");
+        }
         return tabList;
     }
 
@@ -153,6 +160,7 @@ public class ActivityChartsActivity extends AbstractChartsActivity {
         @NonNull
         @Override
         public Fragment getItem(int position) {
+            final DeviceCoordinator coordinator = getDevice().getDeviceCoordinator();
             // getItem is called to instantiate the fragment for the given page.
             switch (enabledTabsList.get(position)) {
                 case "activity":
@@ -182,11 +190,17 @@ public class ActivityChartsActivity extends AbstractChartsActivity {
                 case "spo2":
                     return new Spo2ChartFragment();
                 case "temperature":
-                    return new TemperatureChartFragment();
+                    return coordinator.supportsContinuousTemperature()? new TemperatureDailyFragment(): new TemperatureChartFragment();
                 case "cycling":
                     return new CyclingChartFragment();
                 case "weight":
                     return new WeightChartFragment();
+                case "calories":
+                    Intent intent = getIntent();
+                    String mode = intent.getStringExtra(ActivityChartsActivity.EXTRA_MODE);
+                    return CaloriesDailyFragment.newInstance(mode);
+                case "respiratoryrate":
+                    return RespiratoryRateCollectionFragment.newInstance(enabledTabsList.size() == 1);
             }
 
             return new UnknownFragment();
@@ -232,6 +246,10 @@ public class ActivityChartsActivity extends AbstractChartsActivity {
                     return getString(R.string.title_cycling);
                 case "weight":
                     return getString(R.string.menuitem_weight);
+                case "calories":
+                    return getString(R.string.calories);
+                case "respiratoryrate":
+                    return getString(R.string.respiratoryrate);
             }
 
             return String.format(Locale.getDefault(), "Unknown %d", position);

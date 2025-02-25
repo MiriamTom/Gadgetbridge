@@ -16,6 +16,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 
+import nodomain.freeyourgadget.gadgetbridge.R;
 import nodomain.freeyourgadget.gadgetbridge.activities.workouts.entries.ActivitySummaryProgressEntry;
 import nodomain.freeyourgadget.gadgetbridge.activities.workouts.entries.ActivitySummaryTableRowEntry;
 import nodomain.freeyourgadget.gadgetbridge.activities.workouts.entries.ActivitySummaryValue;
@@ -180,6 +181,27 @@ public class GarminWorkoutParser implements ActivitySummaryParser {
         if (session.getMaxHeartRate() != null) {
             summaryData.add(HR_MAX, session.getMaxHeartRate(), UNIT_BPM);
         }
+        if (session.getHrvSdrr() != null) {
+            summaryData.add(HRV_SDRR, session.getHrvSdrr(), UNIT_MILLISECONDS);
+        }
+        if (session.getHrvRmssd() != null) {
+            summaryData.add(HRV_RMSSD, session.getHrvRmssd(), UNIT_MILLISECONDS);
+        }
+        if (session.getAvgSpo2() != null) {
+            summaryData.add(SPO2_AVG, session.getAvgSpo2(), UNIT_PERCENTAGE);
+        }
+        if (session.getEnhancedAvgRespirationRate() != null) {
+            summaryData.add(RESPIRATION_AVG, session.getEnhancedAvgRespirationRate(), UNIT_BREATHS_PER_MIN);
+        }
+        if (session.getEnhancedMaxRespirationRate() != null) {
+            summaryData.add(RESPIRATION_MAX, session.getEnhancedMaxRespirationRate(), UNIT_BREATHS_PER_MIN);
+        }
+        if (session.getEnhancedMinRespirationRate() != null) {
+            summaryData.add(RESPIRATION_MIN, session.getEnhancedMinRespirationRate(), UNIT_BREATHS_PER_MIN);
+        }
+        if (session.getAvgStress() != null) {
+            summaryData.add(STRESS_AVG, session.getAvgStress(), UNIT_NONE);
+        }
         if (session.getAverageCadence() != null) {
             summaryData.add(CADENCE_AVG, session.getAverageCadence(), UNIT_SPM);
         }
@@ -213,16 +235,35 @@ public class GarminWorkoutParser implements ActivitySummaryParser {
             // Find the first time in zone for the session (assumes single-session)
             if (fitTimeInZone.getReferenceMessage() != null && fitTimeInZone.getReferenceMessage() == 18) {
                 final Double[] timeInZones = fitTimeInZone.getTimeInZone();
-                final double totalTime = Arrays.stream(timeInZones).mapToInt(Double::intValue).sum();
+                if (timeInZones == null) {
+                    continue;
+                }
+                final double totalTime = Arrays.stream(timeInZones).mapToDouble(Number::doubleValue).sum();
+                if (totalTime == 0) {
+                    continue;
+                }
+                if (timeInZones[0] != null && timeInZones[0] == totalTime) {
+                    // The total time is N/A, so do not add the section
+                    continue;
+                }
                 final List<String> zoneOrder = Arrays.asList(HR_ZONE_NA, HR_ZONE_WARM_UP, HR_ZONE_EASY, HR_ZONE_AEROBIC, HR_ZONE_THRESHOLD, HR_ZONE_MAXIMUM);
-                for (int i = 1; i < zoneOrder.size(); i++) {
+                final int[] zoneColors = new int[]{
+                        0,
+                        context.getResources().getColor(R.color.hr_zone_warm_up_color),
+                        context.getResources().getColor(R.color.hr_zone_easy_color),
+                        context.getResources().getColor(R.color.hr_zone_aerobic_color),
+                        context.getResources().getColor(R.color.hr_zone_threshold_color),
+                        context.getResources().getColor(R.color.hr_zone_maximum_color),
+                };
+                for (int i = 0; i < zoneOrder.size(); i++) {
                     double timeInZone = timeInZones[i] != null ? Math.rint(timeInZones[i]) : 0;
                     summaryData.add(
                             zoneOrder.get(i),
                             new ActivitySummaryProgressEntry(
                                     timeInZone,
                                     UNIT_SECONDS,
-                                    (int) (100 * timeInZone / totalTime)
+                                    (int) (100 * timeInZone / totalTime),
+                                    zoneColors[i]
                             )
                     );
                 }

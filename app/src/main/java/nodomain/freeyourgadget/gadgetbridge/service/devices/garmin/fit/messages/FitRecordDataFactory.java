@@ -37,6 +37,8 @@ public class FitRecordDataFactory {
                 return new FitEvent(recordDefinition, recordHeader);
             case 23:
                 return new FitDeviceInfo(recordDefinition, recordHeader);
+            case 26:
+                return new FitWorkout(recordDefinition, recordHeader);
             case 31:
                 return new FitCourse(recordDefinition, recordHeader);
             case 49:
@@ -55,10 +57,14 @@ public class FitRecordDataFactory {
                 return new FitWatchfaceSettings(recordDefinition, recordHeader);
             case 160:
                 return new FitGpsMetadata(recordDefinition, recordHeader);
+            case 162:
+                return new FitTimestampCorrelation(recordDefinition, recordHeader);
             case 206:
                 return new FitFieldDescription(recordDefinition, recordHeader);
             case 207:
                 return new FitDeveloperData(recordDefinition, recordHeader);
+            case 211:
+                return new FitMonitoringHrData(recordDefinition, recordHeader);
             case 216:
                 return new FitTimeInZone(recordDefinition, recordHeader);
             case 222:
@@ -83,6 +89,10 @@ public class FitRecordDataFactory {
                 return new FitHrvSummary(recordDefinition, recordHeader);
             case 371:
                 return new FitHrvValue(recordDefinition, recordHeader);
+            case 397:
+                return new FitSkinTempRaw(recordDefinition, recordHeader);
+            case 398:
+                return new FitSkinTempOvernight(recordDefinition, recordHeader);
         }
 
         return new RecordData(recordDefinition, recordHeader);

@@ -37,12 +37,14 @@ import nodomain.freeyourgadget.gadgetbridge.database.DBHelper;
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEventUpdatePreferences;
 import nodomain.freeyourgadget.gadgetbridge.devices.colmi.samples.ColmiActivitySampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.colmi.samples.ColmiHeartRateSampleProvider;
+import nodomain.freeyourgadget.gadgetbridge.devices.colmi.samples.ColmiHrvValueSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.colmi.samples.ColmiSleepSessionSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.colmi.samples.ColmiSleepStageSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.colmi.samples.ColmiSpo2SampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.colmi.samples.ColmiStressSampleProvider;
 import nodomain.freeyourgadget.gadgetbridge.entities.ColmiActivitySample;
 import nodomain.freeyourgadget.gadgetbridge.entities.ColmiHeartRateSample;
+import nodomain.freeyourgadget.gadgetbridge.entities.ColmiHrvValueSample;
 import nodomain.freeyourgadget.gadgetbridge.entities.ColmiSleepSessionSample;
 import nodomain.freeyourgadget.gadgetbridge.entities.ColmiSleepStageSample;
 import nodomain.freeyourgadget.gadgetbridge.entities.ColmiSpo2Sample;
@@ -91,6 +93,17 @@ public class ColmiR0xPacketHandler {
         GBDeviceEventUpdatePreferences eventUpdatePreferences = new GBDeviceEventUpdatePreferences();
         eventUpdatePreferences.withPreference(
                 DeviceSettingsPreferenceConst.PREF_HEARTRATE_STRESS_MONITORING,
+                enabled
+        );
+        support.evaluateGBDeviceEvent(eventUpdatePreferences);
+    }
+
+    public static void hrvSettings(ColmiR0xDeviceSupport support, byte[] value) {
+        boolean enabled = value[2] == 0x01;
+        LOG.info("Received HRV preference: {}", enabled ? "enabled" : "disabled");
+        GBDeviceEventUpdatePreferences eventUpdatePreferences = new GBDeviceEventUpdatePreferences();
+        eventUpdatePreferences.withPreference(
+                DeviceSettingsPreferenceConst.PREF_HRV_ALL_DAY_MONITORING,
                 enabled
         );
         support.evaluateGBDeviceEvent(eventUpdatePreferences);
@@ -174,6 +187,7 @@ public class ColmiR0xPacketHandler {
             sampleCal.set(Calendar.HOUR_OF_DAY, value[4] / 4);  // And the hour is transmitted as nth quarter of the day...
             sampleCal.set(Calendar.MINUTE, 0);
             sampleCal.set(Calendar.SECOND, 0);
+            sampleCal.set(Calendar.MILLISECOND, 0);
             int calories = BLETypeConversions.toUint16(value[7], value[8]);
             int steps = BLETypeConversions.toUint16(value[9], value[10]);
             int distance = BLETypeConversions.toUint16(value[11], value[12]);
@@ -217,6 +231,8 @@ public class ColmiR0xPacketHandler {
             LOG.info("Received initial stress history response");
         } else {
             Calendar sampleCal = Calendar.getInstance();
+            sampleCal.set(Calendar.SECOND, 0);
+            sampleCal.set(Calendar.MILLISECOND, 0);
             int startValue = stressPacketNr == 1 ? 3 : 2;  // packet 1 data starts at byte 3, others at byte 2
             int minutesInPreviousPackets = 0;
             if (stressPacketNr > 1) {
@@ -271,6 +287,7 @@ public class ColmiR0xPacketHandler {
             syncingDay.add(Calendar.DAY_OF_MONTH, 0 - spo2_days_ago);
             syncingDay.set(Calendar.MINUTE, 0);
             syncingDay.set(Calendar.SECOND, 0);
+            syncingDay.set(Calendar.MILLISECOND, 0);
             index++;
             for (int hour=0; hour<=23; hour++) {
                 syncingDay.set(Calendar.HOUR_OF_DAY, hour);
@@ -321,20 +338,23 @@ public class ColmiR0xPacketHandler {
                 index++;
                 int dayBytes = value[index];
                 index++;
+                // sleepStart is received as "minutes after midnight"
                 int sleepStart = BLETypeConversions.toUint16(value[index], value[index + 1]);
                 index += 2;
+                // sleepEnd is received as "minutes after midnight"
                 int sleepEnd = BLETypeConversions.toUint16(value[index], value[index + 1]);
                 index += 2;
                 // Calculate sleep start timestamp
+                LOG.info("Sleep session daysAgo={}, dayBytes={}, sleepStart={}, sleepEnd={}", daysAgo, dayBytes, sleepStart, sleepEnd);
                 Calendar sessionStart = Calendar.getInstance();
                 sessionStart.add(Calendar.DAY_OF_MONTH, 0 - daysAgo);
                 sessionStart.set(Calendar.HOUR_OF_DAY, 0);
                 sessionStart.set(Calendar.MINUTE, 0);
                 sessionStart.set(Calendar.SECOND, 0);
+                sessionStart.set(Calendar.MILLISECOND, 0);
                 if (sleepStart > sleepEnd) {
                     // Sleep started a day earlier, so before midnight
-                    sessionStart.add(Calendar.DAY_OF_MONTH, -1);
-                    sessionStart.add(Calendar.MINUTE, sleepStart);
+                    sessionStart.add(Calendar.MINUTE, sleepStart - 1440);
                 } else {
                     // Sleep started this day, so after midnight
                     sessionStart.add(Calendar.MINUTE, sleepStart);
@@ -345,6 +365,7 @@ public class ColmiR0xPacketHandler {
                 sessionEnd.set(Calendar.HOUR_OF_DAY, 0);
                 sessionEnd.set(Calendar.MINUTE, sleepEnd);
                 sessionEnd.set(Calendar.SECOND, 0);
+                sessionEnd.set(Calendar.MILLISECOND, 0);
                 LOG.info("Sleep session starts at {} and ends at {}", sessionStart.getTime(), sessionEnd.getTime());
                 // Build sample object to persist
                 final ColmiSleepSessionSample sessionSample = new ColmiSleepSessionSample();
@@ -355,15 +376,22 @@ public class ColmiR0xPacketHandler {
                 Calendar sleepStage = (Calendar) sessionStart.clone();
                 for (int j = 4; j < dayBytes; j += 2) {
                     int sleepMinutes = value[index + 1];
-                    LOG.info("Sleep stage type={} starts at {} and lasts for {} minutes", value[index], sleepStage.getTime(), sleepMinutes);
                     final ColmiSleepStageSample sample = new ColmiSleepStageSample();
                     sample.setTimestamp(sleepStage.getTimeInMillis());
                     sample.setDuration(value[index + 1]);
                     sample.setStage(value[index]);
-                    stageSamples.add(sample);
+                    if (sleepMinutes > 0) {
+                        LOG.info("Sleep stage type={} starts at {} and lasts for {} minutes", value[index], sleepStage.getTime(), sleepMinutes);
+                        if (sleepStage.getTimeInMillis() + sleepMinutes * 60 * 1000 > sessionEnd.getTimeInMillis()) {
+                            LOG.warn("Warning: sleep stage exceeds end of sleep session, received data may be corrupt");
+                        }
+                        stageSamples.add(sample);
+                        sleepStage.add(Calendar.MINUTE, sleepMinutes);
+                    } else {
+                        LOG.info("Ignoring sleep stage type={} starts at {} and lasts for {} minutes", value[index], sleepStage.getTime(), sleepMinutes);
+                    }
                     // Prepare for next sample
                     index += 2;
-                    sleepStage.add(Calendar.MINUTE, sleepMinutes);
                 }
                 // Persist sleep session
                 try (DBHandler handler = GBApplication.acquireDB()) {
@@ -401,6 +429,62 @@ public class ColmiR0xPacketHandler {
                 } catch (final Exception e) {
                     GB.toast(context, "Error saving sleep stage samples", Toast.LENGTH_LONG, GB.ERROR, e);
                 }
+            }
+        }
+    }
+
+    public static void historicalHRV(GBDevice device, Context context, byte[] value, int daysAgo) {
+        LOG.info("Received HRV history sync packet: {}", StringUtils.bytesToHex(value));
+        int hrvPacketNr = value[1] & 0xff;
+        if (hrvPacketNr == 0xff) {
+            LOG.info("Empty HRV history, sync aborted");
+            device.unsetBusyTask();
+            device.sendDeviceUpdateIntent(context);
+        } else if (hrvPacketNr == 0) {
+            int packetsTotalNr = value[2];
+            LOG.info("HRV history packet {} out of total {}", hrvPacketNr, packetsTotalNr);
+        } else {
+            LOG.info("HRV history packet {}", hrvPacketNr);
+            Calendar sampleCal = Calendar.getInstance();
+            if (daysAgo != 0) {
+                sampleCal.add(Calendar.DAY_OF_MONTH, 0 - daysAgo);
+                sampleCal.set(Calendar.HOUR_OF_DAY, 0);
+                sampleCal.set(Calendar.MINUTE, 0);
+            }
+            sampleCal.set(Calendar.SECOND, 0);
+            sampleCal.set(Calendar.MILLISECOND, 0);
+            int startValue = hrvPacketNr == 1 ? 3 : 2;  // packet 1 contains something in byte 2
+            int minutesInPreviousPackets = 0;
+            if (hrvPacketNr > 1) {
+                minutesInPreviousPackets = 12 * 30;  // packet 1
+                minutesInPreviousPackets += (hrvPacketNr - 2) * 13 * 30;
+            }
+            for (int i = startValue; i < value.length - 1; i++) {
+                if (value[i] != 0x00) {
+                    // Determine time of day
+                    int minuteOfDay = minutesInPreviousPackets + (i - startValue) * 30;
+                    sampleCal.set(Calendar.HOUR_OF_DAY, minuteOfDay / 60);
+                    sampleCal.set(Calendar.MINUTE, minuteOfDay % 60);
+                    LOG.info("Value {} is {} ms, time of day is {}", i, value[i] & 0xff, sampleCal.getTime());
+                    // Build sample object and save in database
+                    try (DBHandler db = GBApplication.acquireDB()) {
+                        ColmiHrvValueSampleProvider sampleProvider = new ColmiHrvValueSampleProvider(device, db.getDaoSession());
+                        Long userId = DBHelper.getUser(db.getDaoSession()).getId();
+                        Long deviceId = DBHelper.getDevice(device, db.getDaoSession()).getId();
+                        ColmiHrvValueSample gbSample = new ColmiHrvValueSample();
+                        gbSample.setDeviceId(deviceId);
+                        gbSample.setUserId(userId);
+                        gbSample.setTimestamp(sampleCal.getTimeInMillis());
+                        gbSample.setValue(value[i] & 0xff);
+                        sampleProvider.addSample(gbSample);
+                    } catch (Exception e) {
+                        LOG.error("Error acquiring database for recording HRV samples", e);
+                    }
+                }
+            }
+            if (hrvPacketNr == 4) {
+                device.unsetBusyTask();
+                device.sendDeviceUpdateIntent(context);
             }
         }
     }

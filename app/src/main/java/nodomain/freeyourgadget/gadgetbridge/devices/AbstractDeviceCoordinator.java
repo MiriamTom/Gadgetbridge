@@ -76,7 +76,9 @@ import nodomain.freeyourgadget.gadgetbridge.model.HeartRateSample;
 import nodomain.freeyourgadget.gadgetbridge.model.HrvSummarySample;
 import nodomain.freeyourgadget.gadgetbridge.model.HrvValueSample;
 import nodomain.freeyourgadget.gadgetbridge.model.PaiSample;
-import nodomain.freeyourgadget.gadgetbridge.model.SleepRespiratoryRateSample;
+import nodomain.freeyourgadget.gadgetbridge.model.RespiratoryRateSample;
+import nodomain.freeyourgadget.gadgetbridge.model.RestingMetabolicRateSample;
+import nodomain.freeyourgadget.gadgetbridge.model.SleepScoreSample;
 import nodomain.freeyourgadget.gadgetbridge.model.Spo2Sample;
 import nodomain.freeyourgadget.gadgetbridge.model.StressSample;
 import nodomain.freeyourgadget.gadgetbridge.model.TemperatureSample;
@@ -93,7 +95,7 @@ public abstract class AbstractDeviceCoordinator implements DeviceCoordinator {
     private Pattern supportedDeviceName = null;
 
     /**
-     * This method should return a ReGexp pattern that will matched against a found device
+     * This method should return a Regexp pattern that will matched against a found device
      * to check whether this coordinator supports that device.
      * If more sophisticated logic is needed to determine device support, the supports(GBDeviceCandidate)
      * should be overridden.
@@ -271,12 +273,22 @@ public abstract class AbstractDeviceCoordinator implements DeviceCoordinator {
     }
 
     @Override
-    public TimeSampleProvider<? extends SleepRespiratoryRateSample> getSleepRespiratoryRateSampleProvider(GBDevice device, DaoSession session) {
+    public TimeSampleProvider<? extends RespiratoryRateSample> getRespiratoryRateSampleProvider(GBDevice device, DaoSession session) {
         return null;
     }
 
     @Override
     public TimeSampleProvider<? extends WeightSample> getWeightSampleProvider(GBDevice device, DaoSession session) {
+        return null;
+    }
+
+    @Override
+    public TimeSampleProvider<? extends RestingMetabolicRateSample> getRestingMetabolicRateProvider(final GBDevice device, final DaoSession session) {
+        return new DefaultRestingMetabolicRateProvider(device, session);
+    }
+
+    @Override
+    public TimeSampleProvider<? extends SleepScoreSample> getSleepScoreProvider(final GBDevice device, final DaoSession session) {
         return null;
     }
 
@@ -491,6 +503,11 @@ public abstract class AbstractDeviceCoordinator implements DeviceCoordinator {
     }
 
     @Override
+    public boolean supportsActiveCalories() {
+        return false;
+    }
+
+    @Override
     public boolean supportsActivityTabs() {
         return supportsActivityTracking();
     }
@@ -509,6 +526,11 @@ public abstract class AbstractDeviceCoordinator implements DeviceCoordinator {
 
     @Override
     public boolean supportsTemperatureMeasurement() {
+        return false;
+    }
+
+    @Override
+    public boolean supportsContinuousTemperature() {
         return false;
     }
 
@@ -538,8 +560,28 @@ public abstract class AbstractDeviceCoordinator implements DeviceCoordinator {
     }
 
     @Override
-    public boolean supportsSleepRespiratoryRate() {
+    public boolean supportsPaiLow() {
+        return supportsPai();
+    }
+
+    @Override
+    public int getPaiTarget() {
+        return 100;
+    }
+
+    @Override
+    public boolean supportsRespiratoryRate() {
         return false;
+    }
+
+    @Override
+    public boolean supportsDayRespiratoryRate() {
+        return false;
+    }
+
+    @Override
+    public boolean supportsSleepRespiratoryRate() {
+        return supportsRespiratoryRate();
     }
 
     @Override
@@ -639,6 +681,11 @@ public abstract class AbstractDeviceCoordinator implements DeviceCoordinator {
     }
 
     @Override
+    public boolean supportsHeartRateRestingMeasurement(final GBDevice device) {
+        return false;
+    }
+
+    @Override
     public boolean supportsManualHeartRateMeasurement(final GBDevice device) {
         return supportsHeartRateMeasurement(device);
     }
@@ -660,6 +707,11 @@ public abstract class AbstractDeviceCoordinator implements DeviceCoordinator {
 
     @Override
     public boolean supportsAwakeSleep() {
+        return false;
+    }
+
+    @Override
+    public boolean supportsSleepScore() {
         return false;
     }
 

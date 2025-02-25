@@ -121,6 +121,11 @@ public abstract class HuamiCoordinator extends AbstractBLEDeviceCoordinator {
     }
 
     @Override
+    public boolean supportsHeartRateRestingMeasurement(final GBDevice device) {
+        return true;
+    }
+
+    @Override
     public int[] getSupportedDeviceSpecificAuthenticationSettings() {
         return new int[]{R.xml.devicesettings_pairingkey};
     }
@@ -161,7 +166,7 @@ public abstract class HuamiCoordinator extends AbstractBLEDeviceCoordinator {
     }
 
     @Override
-    public HuamiSleepRespiratoryRateSampleProvider getSleepRespiratoryRateSampleProvider(GBDevice device, DaoSession session) {
+    public HuamiSleepRespiratoryRateSampleProvider getRespiratoryRateSampleProvider(GBDevice device, DaoSession session) {
         return new HuamiSleepRespiratoryRateSampleProvider(device, session);
     }
 

@@ -19,6 +19,7 @@ package nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.HuaweiPacket;
@@ -58,6 +59,8 @@ public class Workout {
                 public short workoutNumber;
                 public short dataCount;
                 public short paceCount;
+                public short segmentsCount = 0;
+
             }
 
             public short count;
@@ -84,8 +87,14 @@ public class Workout {
                     workoutNumber.workoutNumber = subContainerTlv.getShort(0x06);
                     workoutNumber.dataCount = subContainerTlv.getShort(0x07);
                     workoutNumber.paceCount = subContainerTlv.getShort(0x08);
+                    if(subContainerTlv.contains(0x09)) {
+                        workoutNumber.segmentsCount = subContainerTlv.getShort(0x09);
+                    }
                     this.workoutNumbers.add(workoutNumber);
                 }
+
+                // Has to be sorted for the timestamp-based sync start that we use in the HuaweiSupportProvider
+                this.workoutNumbers.sort(Comparator.comparingInt(o -> o.workoutNumber));
             }
         }
     }
@@ -128,6 +137,44 @@ public class Workout {
             public short laps = -1;
             public short avgSwolf = -1;
 
+            public Integer maxAltitude = null;
+            public Integer minAltitude = null;
+            public Integer elevationGain = null;
+            public Integer elevationLoss = null;
+
+            public int workoutLoad = 0;
+            public int workoutAerobicEffect = 0;
+            public byte workoutAnaerobicEffect = -1;
+            public short recoveryTime = 0;
+
+            public byte minHeartRatePeak = 0;
+            public byte maxHeartRatePeak = 0;
+
+            public byte[] recoveryHeartRates = null;
+
+            public byte swimType = -1;
+
+            public int maxMET = 0;
+
+            public byte hrZoneType = -1;
+
+            public short runPaceZone1Min = -1;
+            public short runPaceZone2Min = -1;
+            public short runPaceZone3Min = -1;
+            public short runPaceZone4Min = -1;
+            public short runPaceZone5Min = -1;
+            public short runPaceZone5Max = -1;
+
+            public short runPaceZone1Time = -1;
+            public short runPaceZone2Time = -1;
+            public short runPaceZone3Time = -1;
+            public short runPaceZone4Time = -1;
+            public short runPaceZone5Time = -1;
+
+            public byte algType = 0;
+
+            public int trainingPoints = -1;
+
             public Response(ParamsProvider paramsProvider) {
                 super(paramsProvider);
             }
@@ -151,11 +198,27 @@ public class Workout {
                     this.stepCount = container.getInteger(0x08);
                 if (container.contains(0x09))
                     this.totalTime = container.getInteger(0x09);
+                if (container.contains(0x0b))
+                    this.elevationGain = container.getInteger(0x0b);
+                if (container.contains(0x0c)) {
+                    byte[] hrData = container.getBytes(0x0c);
+                    minHeartRatePeak = hrData[0];
+                    maxHeartRatePeak = hrData[1];
+                }
+                if (container.contains(0x0d))
+                    this.workoutLoad = container.getInteger(0x0d);
+                if (container.contains(0x0e))
+                    this.workoutAerobicEffect = container.getInteger(0x0e);
+                if (container.contains(0x10))
+                    this.maxMET = container.getInteger(0x10);
+                if (container.contains(0x11))
+                    this.recoveryTime = container.getShort(0x11);
                 if (container.contains(0x12))
                     this.duration = container.getInteger(0x12);
                 if (container.contains(0x14))
                     this.type = container.getByte(0x14);
-                // TODO: I'm guessing 0x15 is Main style for swimming, but cannot confirm.
+                if (container.contains(0x15))
+                    this.swimType = container.getByte(0x15);
                 if (container.contains(0x16))
                     this.strokes = container.getShort(0x16);
                 if (container.contains(0x17))
@@ -166,6 +229,44 @@ public class Workout {
                     this.laps = container.getShort(0x19);
                 if (container.contains(0x1a))
                     this.avgSwolf = container.getShort(0x1a);
+                if (container.contains(0x1b))
+                    this.elevationLoss = container.getInteger(0x1b);
+                if (container.contains(0x1c))
+                    this.maxAltitude = container.getInteger(0x1c);
+                if (container.contains(0x1d))
+                    this.minAltitude = container.getInteger(0x1d);
+                if (container.contains(0x20))
+                    this.workoutAnaerobicEffect = container.getByte(0x20);
+                if (container.contains(0x24))
+                    this.hrZoneType = container.getByte(0x24);
+                if (container.contains(0x50))
+                    this.runPaceZone1Min = container.getShort(0x50);
+                if (container.contains(0x51))
+                    this.runPaceZone2Min = container.getShort(0x51);
+                if (container.contains(0x52))
+                    this.runPaceZone3Min = container.getShort(0x52);
+                if (container.contains(0x53))
+                    this.runPaceZone4Min = container.getShort(0x53);
+                if (container.contains(0x54))
+                    this.runPaceZone5Min = container.getShort(0x54);
+                if (container.contains(0x55))
+                    this.runPaceZone5Max = container.getShort(0x55);
+                if (container.contains(0x56))
+                    this.runPaceZone1Time = container.getShort(0x56);
+                if (container.contains(0x57))
+                    this.runPaceZone2Time = container.getShort(0x57);
+                if (container.contains(0x58))
+                    this.runPaceZone3Time = container.getShort(0x58);
+                if (container.contains(0x59))
+                    this.runPaceZone4Time = container.getShort(0x59);
+                if (container.contains(0x5a))
+                    this.runPaceZone5Time = container.getShort(0x5a);
+                if (container.contains(0x5d))
+                    this.algType = container.getByte(0x5d);
+                if (container.contains(0x63))
+                    this.trainingPoints = container.getShort(0x63);
+                if (container.contains(0x66))
+                    this.recoveryHeartRates = container.getBytes(0x66);
             }
         }
     }
@@ -236,7 +337,7 @@ public class Workout {
                 public byte backFootLanding = -1;
                 public byte eversionAngle = -1;
 
-                public byte swolf = -1;
+                public short swolf = -1;
                 public short strokeRate = -1;
 
                 public short calories = -1;
@@ -273,9 +374,8 @@ public class Workout {
                 }
             }
 
-            // I'm not sure about the lengths, but we haven't gotten any complaints so they probably are fine
-            private final byte[] bitmapLengths = {1, 2, 1, 2, 2, 4, -1, 2, 2, 2, 1, 1, 1, 1, 1, 1};
-            private final byte[] innerBitmapLengths = {2, 2, 2, 1, 2, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1};
+            private final byte[] bitmapLengths = {1, 2, 1, 2, 2, 4, -1, 2, 2, 2};
+            private final byte[] innerBitmapLengths = {2, 2, 2, 1, 2, 1, 1, 1, 1, 2, 2, 1, 2, 2, 2, 2, 1, 1, 1, 2};
 
             public short workoutNumber;
             public short dataNumber;
@@ -292,6 +392,7 @@ public class Workout {
 
             /**
              * This is to be able to easily reparse the error data, only accepts tlv bytes
+             *
              * @param rawData The TLV bytes
              */
             public Response(byte[] rawData) throws ParseException {
@@ -315,7 +416,7 @@ public class Workout {
                     innerBitmap = 0x01FF; // This seems to be the default
 
                 int innerDataLength = 0;
-                for (byte i = 0; i < 16; i++) {
+                for (byte i = 0; i < innerBitmapLengths.length; i++) {
                     if ((innerBitmap & (1 << i)) != 0) {
                         innerDataLength += innerBitmapLengths[i];
                     }
@@ -340,7 +441,7 @@ public class Workout {
 
                 // Check data lengths from bitmap
                 int dataLength = 0;
-                for (byte i = 0; i < 16; i++) {
+                for (byte i = 0; i < bitmapLengths.length; i++) {
                     if ((header.bitmap & (1 << i)) != 0) {
                         if (i == 6) {
                             dataLength += innerDataLength;
@@ -358,7 +459,7 @@ public class Workout {
                 for (short i = 0; i < header.dataCount; i++) {
                     Data data = new Data();
                     data.timestamp = header.timestamp + header.interval * i;
-                    for (byte j = 0; j < 16; j++) {
+                    for (byte j = 0; j < bitmapLengths.length; j++) {
                         if ((header.bitmap & (1 << j)) != 0) {
                             switch (j) {
                                 case 0:
@@ -371,7 +472,7 @@ public class Workout {
                                     data.stepRate = buf.get();
                                     break;
                                 case 3:
-                                    data.swolf = buf.get();
+                                    data.swolf = buf.getShort();
                                     break;
                                 case 4:
                                     data.strokeRate = buf.getShort();
@@ -382,7 +483,7 @@ public class Workout {
                                 case 6:
                                     // Inner data, parsing into data
                                     // TODO: function for readability?
-                                    for (byte k = 0; k < 16; k++) {
+                                    for (byte k = 0; k < innerBitmapLengths.length; k++) {
                                         if ((innerBitmap & (1 << k)) != 0) {
                                             switch (k) {
                                                 case 0:
@@ -475,7 +576,9 @@ public class Workout {
                 public short distance = -1;
                 public byte type = -1;
                 public int pace = -1;
+                public short pointIndex = 0;
                 public short correction = 0;
+                public boolean hasCorrection = false;
 
                 @Override
                 public String toString() {
@@ -483,7 +586,9 @@ public class Workout {
                             "distance=" + distance +
                             ", type=" + type +
                             ", pace=" + pace +
+                            ", pointIndex=" + pointIndex +
                             ", correction=" + correction +
+                            ", hasCorrection=" + hasCorrection +
                             '}';
                 }
             }
@@ -509,8 +614,106 @@ public class Workout {
                     block.distance = blockTlv.getShort(0x04);
                     block.type = blockTlv.getByte(0x05);
                     block.pace = blockTlv.getInteger(0x06);
-                    if (blockTlv.contains(0x09))
+                    if (blockTlv.contains(0x07))
+                        block.pointIndex = blockTlv.getShort(0x07);
+                    if (blockTlv.contains(0x09)) {
+                        block.hasCorrection = true;
                         block.correction = blockTlv.getShort(0x09);
+                    }
+                    blocks.add(block);
+                }
+            }
+        }
+    }
+
+    public static class WorkoutSwimSegments {
+        public static final int id = 0x0e;
+
+        public static class Request extends HuaweiPacket {
+
+            public Request(
+                    ParamsProvider paramsProvider,
+                    short workoutNumber,
+                    short segmentNumber
+            ) {
+                super(paramsProvider);
+
+                this.serviceId = Workout.id;
+                this.commandId = id;
+
+                this.tlv = new HuaweiTLV().put(0x81, new HuaweiTLV()
+                        .put(0x02, workoutNumber)
+                        .put(0x08, segmentNumber)
+                );
+
+                this.complete = true;
+            }
+        }
+
+        public static class Response extends HuaweiPacket {
+            public static class Block {
+                public short distance = -1;
+                public byte type = -1;
+                public int pace = -1;
+                public short pointIndex = 0;
+                public short segment = -1;
+                public byte swimType= -1;
+                public short strokes = -1;
+                public short avgSwolf = -1;
+                public int time= -1;
+
+                @Override
+                public String toString() {
+                    final StringBuffer sb = new StringBuffer("Block{");
+                    sb.append("distance=").append(distance);
+                    sb.append(", type=").append(type);
+                    sb.append(", pace=").append(pace);
+                    sb.append(", pointIndex=").append(pointIndex);
+                    sb.append(", segment=").append(segment);
+                    sb.append(", swimType=").append(swimType);
+                    sb.append(", strokes=").append(strokes);
+                    sb.append(", awgSwolf=").append(avgSwolf);
+                    sb.append(", time=").append(time);
+                    sb.append('}');
+                    return sb.toString();
+                }
+            }
+
+            public short workoutNumber;
+            public short segmentNumber;
+            public List<Block> blocks;
+
+            public Response(ParamsProvider paramsProvider) {
+                super(paramsProvider);
+            }
+
+            @Override
+            public void parseTlv() throws ParseException {
+                HuaweiTLV container = this.tlv.getObject(0x81);
+
+                this.workoutNumber = container.getShort(0x02);
+                this.segmentNumber = container.getShort(0x08);
+
+                this.blocks = new ArrayList<>();
+                for (HuaweiTLV blockTlv : container.getObjects(0x83)) {
+                    Block block = new Block();
+
+                    block.distance = blockTlv.getShort(0x04);
+                    block.type = blockTlv.getByte(0x05);
+                    block.pace = blockTlv.getInteger(0x06);
+                    if (blockTlv.contains(0x07))
+                        block.pointIndex = blockTlv.getShort(0x07);
+                    if (blockTlv.contains(0x09))
+                        block.segment = blockTlv.getShort(0x09);
+                    if (blockTlv.contains(0x0a))
+                        block.swimType= blockTlv.getByte(0x0a);
+                    if (blockTlv.contains(0x0b))
+                        block.strokes = blockTlv.getShort(0x0b);
+                    if (blockTlv.contains(0x0c))
+                        block.avgSwolf = blockTlv.getShort(0x0c);
+                    if (blockTlv.contains(0x0d))
+                        block.time= blockTlv.getInteger(0x0d);
+
                     blocks.add(block);
                 }
             }

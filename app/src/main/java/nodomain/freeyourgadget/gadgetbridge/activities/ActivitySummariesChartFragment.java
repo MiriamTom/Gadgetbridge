@@ -153,6 +153,11 @@ public class ActivitySummariesChartFragment extends AbstractActivityChartFragmen
     }
 
     @Override
+    protected List<? extends ActivitySample> getSamplesHighRes(DBHandler db, GBDevice device, int tsFrom, int tsTo) {
+        return getAllSamplesHighRes(db, device, tsFrom, tsTo);
+    }
+
+    @Override
     protected void setupLegend(Chart<?> chart) {
         List<LegendEntry> legendEntries = new ArrayList<>(5);
 
@@ -231,9 +236,12 @@ public class ActivitySummariesChartFragment extends AbstractActivityChartFragmen
 
         private DefaultChartsData<LineData> buildChartFromSamples(DBHandler handler) {
             final List<? extends ActivitySample> samples = getAllSamples(handler, gbDevice, startTime, endTime);
+            final List<? extends ActivitySample> highResSamples = getAllSamplesHighRes(handler, gbDevice, startTime, endTime);
 
             try {
-                return refresh(gbDevice, samples);
+                if (highResSamples == null)
+                    return refresh(gbDevice, samples);
+                return refresh(gbDevice, samples, highResSamples);
             } catch (Exception e) {
                 LOG.error("Unable to get charts data right now", e);
             }
@@ -260,17 +268,26 @@ public class ActivitySummariesChartFragment extends AbstractActivityChartFragmen
             }
 
             final List<Entry> heartRateEntries = new ArrayList<>(activityPoints.size());
-            int lastHrSampleTs = -1;
+            final List<ILineDataSet> heartRateDataSets = new ArrayList<>();
+            int lastTsShorten = 0;
             for (final ActivityPoint activityPoint : activityPoints) {
-                int ts = tsTranslation.shorten((int) (activityPoint.getTime().getTime() / 1000));
-                if (lastHrSampleTs > -1 && ts - lastHrSampleTs > 1800 * HeartRateUtils.MAX_HR_MEASUREMENTS_GAP_MINUTES) {
-                    heartRateEntries.add(createLineEntry(0, lastHrSampleTs + 1));
-                    heartRateEntries.add(createLineEntry(0, ts - 1));
+                int tsShorten = tsTranslation.shorten((int) (activityPoint.getTime().getTime() / 1000));
+                if (lastTsShorten == 0 || (tsShorten - lastTsShorten) <= 60 * HeartRateUtils.MAX_HR_MEASUREMENTS_GAP_MINUTES) {
+                    heartRateEntries.add(new Entry(tsShorten, activityPoint.getHeartRate()));
+                } else {
+                    if (!heartRateEntries.isEmpty()) {
+                        List<Entry> clone = new ArrayList<>(heartRateEntries.size());
+                        clone.addAll(heartRateEntries);
+                        heartRateDataSets.add(createHeartrateSet(clone, "Heart Rate"));
+                        heartRateEntries.clear();
+                    }
                 }
-                heartRateEntries.add(createLineEntry(activityPoint.getHeartRate(), ts));
-                lastHrSampleTs = ts;
+                lastTsShorten = tsShorten;
+                heartRateEntries.add(new Entry(tsShorten, activityPoint.getHeartRate()));
             }
-            final LineDataSet heartRateSet = createHeartrateSet(heartRateEntries, "Heart Rate");
+            if (!heartRateEntries.isEmpty()) {
+                heartRateDataSets.add(createHeartrateSet(heartRateEntries, "Heart Rate"));
+            }
 
             if (activitySamplesData != null) {
                 // if we have activity samples, replace the heart rate dataset
@@ -279,7 +296,7 @@ public class ActivitySummariesChartFragment extends AbstractActivityChartFragmen
                 for (final ILineDataSet dataSet : dataSets) {
                     if ("Heart Rate".equals(dataSet.getLabel())) {
                         dataSets.remove(dataSet);
-                        dataSets.add(heartRateSet);
+                        dataSets.addAll(heartRateDataSets);
                         return activitySamplesData;
                     }
                 }
@@ -287,7 +304,7 @@ public class ActivitySummariesChartFragment extends AbstractActivityChartFragmen
                 //dataSets.add(heartRateSet);
                 return activitySamplesData;
             } else {
-                final LineData lineData = new LineData(Collections.singletonList(heartRateSet));
+                final LineData lineData = new LineData(heartRateDataSets);
                 final ValueFormatter xValueFormatter = new SampleXLabelFormatter(tsTranslation, "HH:mm");
                 return new DefaultChartsData<>(lineData, xValueFormatter);
             }

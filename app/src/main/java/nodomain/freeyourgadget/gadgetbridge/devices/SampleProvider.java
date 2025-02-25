@@ -47,12 +47,26 @@ public interface SampleProvider<T extends AbstractActivitySample> {
 
     /**
      * Returns the list of all samples, of any type, within the given time span.
+     * This returns exactly one sample every minute.
      * @param timestamp_from the start timestamp
      * @param timestamp_to the end timestamp
      * @return the list of samples of any type
      */
     @NonNull
     List<T> getAllActivitySamples(int timestamp_from, int timestamp_to);
+
+    /**
+     * Same as {@link #getAllActivitySamples(int, int)}}, but returns as many samples as possible.
+     * Explicitly does not make a guarantee about how many samples there are per timeframe, which
+     * can also change over time.
+     */
+    List<T> getAllActivitySamplesHighRes(int timestamp_from, int timestamp_to);
+
+    /**
+     * Specifies that the sample provider has higher resolution data. Set to true if the sample
+     * provider can provide more than one sample a minute.
+     */
+    boolean hasHighResData();
 
     /**
      * Returns the list of all samples that represent user "activity", within
@@ -90,6 +104,13 @@ public interface SampleProvider<T extends AbstractActivitySample> {
      */
     @Nullable
     T getLatestActivitySample();
+
+    /**
+     * Returns the activity sample with the highest timestamp, until a limit (inclusive). or null if none
+     * @return the latest sample or null
+     */
+    @Nullable
+    T getLatestActivitySample(int until);
 
     /**
      * Returns the activity sample with the oldest timestamp or null if none

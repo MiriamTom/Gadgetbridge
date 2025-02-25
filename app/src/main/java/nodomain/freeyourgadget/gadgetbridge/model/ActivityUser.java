@@ -57,7 +57,7 @@ public class ActivityUser {
     public static final int defaultUserWeightKg = 70;
     public static final int defaultUserSleepDurationGoal = 7;
     public static final int defaultUserStepsGoal = 8000;
-    public static final int defaultUserCaloriesBurntGoal = 2000;
+    public static final int defaultUserCaloriesBurntGoal = 350;
     public static final int defaultUserDistanceGoalMeters = 5000;
     public static final int defaultUserActiveTimeGoalMinutes = 60;
     public static final int defaultUserStepLengthCm = 0;

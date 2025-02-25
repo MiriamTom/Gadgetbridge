@@ -101,9 +101,7 @@ import nodomain.freeyourgadget.gadgetbridge.model.NotificationType;
 import nodomain.freeyourgadget.gadgetbridge.model.Reminder;
 import nodomain.freeyourgadget.gadgetbridge.model.WeatherSpec;
 import nodomain.freeyourgadget.gadgetbridge.model.WorldClock;
-import nodomain.freeyourgadget.gadgetbridge.service.btle.AbstractBTLEDeviceSupport;
 import nodomain.freeyourgadget.gadgetbridge.service.btle.BLEScanService;
-import nodomain.freeyourgadget.gadgetbridge.service.btle.BleIntentApi;
 import nodomain.freeyourgadget.gadgetbridge.service.receivers.AutoConnectIntervalReceiver;
 import nodomain.freeyourgadget.gadgetbridge.service.receivers.GBAutoFetchReceiver;
 import nodomain.freeyourgadget.gadgetbridge.util.EmojiConverter;
@@ -861,6 +859,7 @@ public class DeviceCommunicationService extends Service implements SharedPrefere
                 notificationSpec.flags = intentCopy.getIntExtra(EXTRA_NOTIFICATION_FLAGS, 0);
                 notificationSpec.sourceAppId = intentCopy.getStringExtra(EXTRA_NOTIFICATION_SOURCEAPPID);
                 notificationSpec.iconId = intentCopy.getIntExtra(EXTRA_NOTIFICATION_ICONID, 0);
+                notificationSpec.picturePath = intent.getStringExtra(NOTIFICATION_PICTURE_PATH);
                 notificationSpec.dndSuppressed = intentCopy.getIntExtra(EXTRA_NOTIFICATION_DNDSUPPRESSED, 0);
 
                 if (notificationSpec.type == NotificationType.GENERIC_SMS && notificationSpec.phoneNumber != null) {
@@ -1137,6 +1136,16 @@ public class DeviceCommunicationService extends Service implements SharedPrefere
                 }
                 deviceSupport.onCameraStatusChange(event, filename);
                 break;
+            case ACTION_REQUEST_MUSIC_LIST:
+                deviceSupport.onMusicListReq();
+                break;
+            case ACTION_REQUEST_MUSIC_OPERATION:
+                int operation = intentCopy.getIntExtra("operation", -1);
+                int playlistIndex = intentCopy.getIntExtra("playlistIndex", -1);
+                String playlistName = intentCopy.getStringExtra("playlistName");
+                ArrayList<Integer> musics = (ArrayList<Integer>) intentCopy.getSerializableExtra("musicIds");
+                deviceSupport.onMusicOperation(operation, playlistIndex, playlistName, musics);
+                break;
         }
     }
 
@@ -1313,6 +1322,7 @@ public class DeviceCommunicationService extends Service implements SharedPrefere
                 if (!deviceHasCalendarReceiverRegistered(deviceWithCalendar)) {
                     if (!(GBApplication.isRunningMarshmallowOrLater() && ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_DENIED)) {
                         CalendarReceiver receiver = new CalendarReceiver(this, deviceWithCalendar);
+                        receiver.registerBroadcastReceivers();
                         mCalendarReceiver.add(receiver);
                     }
                 }

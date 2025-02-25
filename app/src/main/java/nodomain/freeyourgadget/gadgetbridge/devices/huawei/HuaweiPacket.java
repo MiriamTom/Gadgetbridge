@@ -35,6 +35,7 @@ import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.App;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.Calls;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.CameraRemote;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.Contacts;
+import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.Earphones;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.EphemerisFileUpload;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.FileDownloadService0A;
 import nodomain.freeyourgadget.gadgetbridge.devices.huawei.packets.FileDownloadService2C;
@@ -446,6 +447,7 @@ public class HuaweiPacket {
                     case DeviceConfig.Auth.id:
                         return new DeviceConfig.Auth.Response(paramsProvider).fromPacket(this);
                     case DeviceConfig.BatteryLevel.id:
+                    case DeviceConfig.BatteryLevel.id_change:
                         return new DeviceConfig.BatteryLevel.Response(paramsProvider).fromPacket(this);
                     case DeviceConfig.DeviceStatus.id:
                         return new DeviceConfig.DeviceStatus.Response(paramsProvider).fromPacket(this);
@@ -570,6 +572,8 @@ public class HuaweiPacket {
                         return new Workout.WorkoutData.Response(paramsProvider).fromPacket(this);
                     case Workout.WorkoutPace.id:
                         return new Workout.WorkoutPace.Response(paramsProvider).fromPacket(this);
+                    case Workout.WorkoutSwimSegments.id:
+                        return new Workout.WorkoutSwimSegments.Response(paramsProvider).fromPacket(this);
                     default:
                         this.isEncrypted = this.attemptDecrypt(); // Helps with debugging
                         return this;
@@ -594,6 +598,20 @@ public class HuaweiPacket {
                         return new MusicControl.MusicInfo.Response(paramsProvider).fromPacket(this);
                     case MusicControl.Control.id:
                         return new MusicControl.Control.Response(paramsProvider).fromPacket(this);
+                    case MusicControl.MusicInfoParams.id:
+                        return new MusicControl.MusicInfoParams.Response(paramsProvider).fromPacket(this);
+                    case MusicControl.MusicList.id:
+                        return new MusicControl.MusicList.Response(paramsProvider).fromPacket(this);
+                    case MusicControl.MusicPlaylists.id:
+                        return new MusicControl.MusicPlaylists.Response(paramsProvider).fromPacket(this);
+                    case MusicControl.MusicPlaylistMusics.id:
+                        return new MusicControl.MusicPlaylistMusics.Response(paramsProvider).fromPacket(this);
+                    case MusicControl.MusicOperation.id:
+                        return new MusicControl.MusicOperation.Response(paramsProvider).fromPacket(this);
+                    case MusicControl.UploadMusicFileInfo.id:
+                        return new MusicControl.UploadMusicFileInfo.UploadMusicFileInfoRequest(paramsProvider).fromPacket(this);
+                    case MusicControl.ExtendedMusicInfoParams.id:
+                        return new MusicControl.ExtendedMusicInfoParams.Response(paramsProvider).fromPacket(this);
                     default:
                         this.isEncrypted = this.attemptDecrypt(); // Helps with debugging
                         return this;
@@ -635,6 +653,13 @@ public class HuaweiPacket {
                     default:
                         this.isEncrypted = this.attemptDecrypt(); // Helps with debugging
                         return this;
+                }
+            case Earphones.id:
+                switch (this.commandId) {
+                    case Earphones.InEarStateResponse.id:
+                        return new Earphones.InEarStateResponse(paramsProvider).fromPacket(this);
+                    case Earphones.GetAudioModeRequest.id:
+                        return new Earphones.GetAudioModeRequest.Response(paramsProvider).fromPacket(this);
                 }
             case FileDownloadService2C.id:
                 switch (this.commandId) {
@@ -821,12 +846,10 @@ public class HuaweiPacket {
         return retv;
     }
 
-    public List<byte[]> serializeFileChunk(byte[] fileChunk, int uploadPosition, short unitSize, byte fileId, boolean isEncrypted) throws SerializeException {
+    public List<byte[]> serializeFileChunk(byte[] fileChunk, int uploadPosition, int unitSize, byte fileId, boolean isEncrypted) throws SerializeException {
         List<byte[]> retv = new ArrayList<>();
-        int headerLength = 5; // Magic + (short)(bodyLength + 1) + 0x00
-        int sliceHeaderLength = 6;
-
-        int footerLength = 2; //CRC16
+        final int subHeaderLength = 6;
+        final int packageHeaderAndFooterLength = 6;
 
         int packetCount = (int) Math.ceil(((double) fileChunk.length) / (double) unitSize);
 
@@ -836,16 +859,16 @@ public class HuaweiPacket {
 
         for (int i = 0; i < packetCount; i++) {
 
-            short contentSize = (short) Math.min(unitSize, buffer.remaining());
+            int contentSize = Math.min(unitSize, buffer.remaining());
 
-            ByteBuffer payload = ByteBuffer.allocate(contentSize + sliceHeaderLength);
-            payload.put(fileId);                                      // Slice
-            payload.put((byte)i);                                       // Flag
+            ByteBuffer payload = ByteBuffer.allocate(contentSize + subHeaderLength);
+            payload.put(fileId);
+            payload.put((byte)i);
             payload.putInt(sliceStart);
 
             byte[] packetContent = new byte[contentSize];
             buffer.get(packetContent);
-            payload.put(packetContent);                              // Packet databyte[] packetContent = new byte[contentSize];
+            payload.put(packetContent);
 
 
             byte[] new_payload = null;
@@ -864,45 +887,23 @@ public class HuaweiPacket {
                 throw new HuaweiPacket.SerializeException("new payload is null");
             }
 
-            short packetSize = (short)(new_payload.length + sliceHeaderLength + footerLength);
-            ByteBuffer packet = ByteBuffer.allocate(packetSize);
-
-            int start = packet.position();
-            packet.put((byte) 0x5a);                                // Magic byte
-            packet.putShort((short) (packetSize - headerLength));   // Length
-
-            packet.put((byte) 0x00);
-            packet.put(this.serviceId);
-            packet.put(this.commandId);
-
-            packet.put(new_payload);
-
-            int length = packet.position() - start;
-            if (length != packetSize - footerLength) {
-                throw new HuaweiPacket.SerializeException(String.format(GBApplication.getLanguage(), "Packet lengths don't match! %d != %d", length, packetSize + headerLength));
+            if ((new_payload.length + packageHeaderAndFooterLength) > paramsProvider.getSliceSize()) {
+                retv.addAll(serializeSliced(new_payload));
+            } else {
+                retv.addAll(serializeUnsliced(new_payload));
             }
-
-            byte[] complete = new byte[length];
-            packet.position(start);
-            packet.get(complete, 0, length);
-            int crc16 = CheckSums.getCRC16(complete, 0x0000);
-
-            packet.putShort((short) crc16);                         // CRC16
 
             sliceStart += contentSize;
 
-            retv.add(packet.array());
         }
         return retv;
     }
 
     public List<byte[]> serializeFileChunk1c(byte[] fileChunk, short transferSize, int packetCount) throws SerializeException {
         List<byte[]> retv = new ArrayList<>();
-        int headerLength = 4; // Magic + (short)(bodyLength + 1) + 0x00
-        int bodyHeaderLength = 2; // sID + cID
-        int footerLength = 2; //CRC16
-        int subHeaderLength = 1;
 
+        final int subHeaderLength = 1;
+        final int packageHeaderAndFooterLength = 6;
 
         ByteBuffer buffer = ByteBuffer.wrap(fileChunk);
 
@@ -919,34 +920,11 @@ public class HuaweiPacket {
 
             byte[] new_payload = payload.array();
 
-            int bodyLength = bodyHeaderLength + new_payload.length;
-
-            short packetSize = (short)(headerLength + bodyLength + footerLength);
-            ByteBuffer packet = ByteBuffer.allocate(packetSize);
-
-            int start = packet.position();
-            packet.put((byte) 0x5a);                                // Magic byte
-            packet.putShort((short) (bodyLength + 1));   // Length
-
-            packet.put((byte) 0x00);
-            packet.put(this.serviceId);
-            packet.put(this.commandId);
-
-            packet.put(new_payload);
-
-            int length = packet.position() - start;
-            if (length != packetSize - footerLength) {
-                throw new HuaweiPacket.SerializeException(String.format(GBApplication.getLanguage(), "Packet lengths don't match! %d != %d", length, packetSize + headerLength));
+            if ((new_payload.length + packageHeaderAndFooterLength) > paramsProvider.getSliceSize()) {
+                retv.addAll(serializeSliced(new_payload));
+            } else {
+                retv.addAll(serializeUnsliced(new_payload));
             }
-
-            byte[] complete = new byte[length];
-            packet.position(start);
-            packet.get(complete, 0, length);
-            int crc16 = CheckSums.getCRC16(complete, 0x0000);
-
-            packet.putShort((short) crc16);                         // CRC16
-
-            retv.add(packet.array());
         }
         return retv;
     }

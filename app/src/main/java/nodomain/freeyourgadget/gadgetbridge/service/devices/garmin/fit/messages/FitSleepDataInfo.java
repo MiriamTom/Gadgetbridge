@@ -31,7 +31,7 @@ public class FitSleepDataInfo extends RecordData {
     }
 
     @Nullable
-    public Long getTimestampInTz() {
+    public Long getLocalTimestamp() {
         return (Long) getFieldByNumber(2);
     }
 

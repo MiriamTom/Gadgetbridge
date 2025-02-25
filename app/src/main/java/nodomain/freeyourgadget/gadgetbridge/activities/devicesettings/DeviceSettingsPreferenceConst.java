@@ -106,6 +106,12 @@ public class DeviceSettingsPreferenceConst {
     public static final String PREF_DEVICE_INTERNET_ACCESS = "device_internet_access";
     public static final String PREF_DEVICE_INTENTS = "device_intents";
 
+    public static final String PREF_ACTIVE_NOISE_CANCELLING_TOGGLE = "active_noise_cancelling_toggle";
+    public static final String PREF_WEAR_SENSOR_TOGGLE = "wear_sensor_toggle";
+    public static final String PREF_BANDW_PSERIES_VPT_ENABLED = "bandw_pseries_vpt_enabled";
+    public static final String PREF_BANDW_PSERIES_VPT_LEVEL = "bandw_pseries_vpt_level";
+    public static final String PREF_BANDW_PSERIES_GUI_VPT_LEVEL = "bandw_pseries_gui_vpt_level";
+
     public static final String PREF_BANGLEJS_TEXT_BITMAP = "banglejs_text_bitmap";
     public static final String PREF_BANGLEJS_TEXT_BITMAP_SIZE = "banglejs_txt_bitmap_size";
     public static final String PREF_BANGLEJS_WEBVIEW_URL = "banglejs_webview_url";
@@ -199,6 +205,7 @@ public class DeviceSettingsPreferenceConst {
     public static final String PREF_HEARTRATE_SLEEP_BREATHING_QUALITY_MONITORING = "heartrate_sleep_breathing_quality_monitoring";
     public static final String PREF_SPO2_ALL_DAY_MONITORING = "spo2_all_day_monitoring_enabled";
     public static final String PREF_SPO2_LOW_ALERT_THRESHOLD = "spo2_low_alert_threshold";
+    public static final String PREF_HRV_ALL_DAY_MONITORING = "hrv_all_day_monitoring_enabled";
 
     public static final String PREF_AUTOHEARTRATE_SWITCH = "pref_autoheartrate_switch";
     public static final String PREF_AUTOHEARTRATE_SLEEP = "pref_autoheartrate_sleep";
@@ -278,6 +285,8 @@ public class DeviceSettingsPreferenceConst {
     public static final String PREF_CONTACTS = "pref_contacts";
     public static final String PREF_WIDGETS = "pref_widgets";
 
+    public static final String PREF_MUSIC_MANAGEMENT = "pref_music_management";
+
     public static final String PREF_ANTILOST_ENABLED = "pref_antilost_enabled";
     public static final String PREF_HYDRATION_SWITCH = "pref_hydration_switch";
     public static final String PREF_HYDRATION_PERIOD = "pref_hydration_period";
@@ -325,6 +334,10 @@ public class DeviceSettingsPreferenceConst {
     public static final String PREF_NOTHING_EAR1_INEAR = "pref_nothing_inear_detection";
     public static final String PREF_NOTHING_EAR1_AUDIOMODE = "pref_nothing_audiomode";
 
+
+    public static final String PREF_HUAWEI_FREEBUDS_INEAR = "pref_freebuds_inear_detection";
+    public static final String PREF_HUAWEI_FREEBUDS_AUDIOMODE = "pref_freebuds_audiomode";
+
     public static final String PREF_GALAXY_BUDS_AMBIENT_MODE = "pref_galaxy_buds_ambient_mode";
     public static final String PREF_GALAXY_BUDS_AMBIENT_VOICE_FOCUS = "pref_galaxy_buds_ambient_voice_focus";
     public static final String PREF_GALAXY_BUDS_AMBIENT_VOLUME = "pref_galaxy_buds_ambient_volume";
@@ -355,6 +368,39 @@ public class DeviceSettingsPreferenceConst {
     public static final String PREFS_NOISE_CONTROL_WITH_ONE_EARBUD ="pref_galaxy_buds_noise_controls_with_one_earbud";
     public static final String PREF_GALAXY_BUDS_PRO_ANC_LEVEL="pref_galaxy_buds_pro_anc_level";
     public static final String PREFS_GALAXY_BUDS_SEAMLESS_CONNECTION="prefs_galaxy_buds_seamless_connection";
+
+    public static final String PREF_REDMI_BUDS_5_PRO_AMBIENT_SOUND_CONTROL="pref_redmi_buds_5_pro_ambient_sound_control";
+    public static final String PREF_REDMI_BUDS_5_PRO_NOISE_CANCELLING_STRENGTH="pref_redmi_buds_5_pro_noise_cancelling_strength";
+    public static final String PREF_REDMI_BUDS_5_PRO_TRANSPARENCY_STRENGTH="pref_redmi_buds_5_pro_transparency_strength";
+    public static final String PREF_REDMI_BUDS_5_PRO_ADAPTIVE_NOISE_CANCELLING="pref_redmi_buds_5_pro_adaptive_noise_cancelling";
+//    public static final String PREF_REDMI_BUDS_5_PRO_PERSONALIZED_NOISE_CANCELLING="pref_redmi_buds_5_pro_personalized_noise_cancelling";
+    public static final String PREF_REDMI_BUDS_5_PRO_CONTROL_SINGLE_TAP_LEFT="pref_redmi_buds_5_pro_control_single_tap_left";
+    public static final String PREF_REDMI_BUDS_5_PRO_CONTROL_SINGLE_TAP_RIGHT="pref_redmi_buds_5_pro_control_single_tap_right";
+    public static final String PREF_REDMI_BUDS_5_PRO_CONTROL_DOUBLE_TAP_LEFT="pref_redmi_buds_5_pro_control_double_tap_left";
+    public static final String PREF_REDMI_BUDS_5_PRO_CONTROL_DOUBLE_TAP_RIGHT="pref_redmi_buds_5_pro_control_double_tap_right";
+    public static final String PREF_REDMI_BUDS_5_PRO_CONTROL_TRIPLE_TAP_LEFT="pref_redmi_buds_5_pro_control_triple_tap_left";
+    public static final String PREF_REDMI_BUDS_5_PRO_CONTROL_TRIPLE_TAP_RIGHT="pref_redmi_buds_5_pro_control_triple_tap_right";
+    public static final String PREF_REDMI_BUDS_5_PRO_CONTROL_LONG_TAP_MODE_LEFT ="pref_redmi_buds_5_pro_control_long_tap_mode_left";
+    public static final String PREF_REDMI_BUDS_5_PRO_CONTROL_LONG_TAP_MODE_RIGHT ="pref_redmi_buds_5_pro_control_long_tap_mode_right";
+    public static final String PREF_REDMI_BUDS_5_PRO_CONTROL_LONG_TAP_SETTINGS_LEFT ="pref_redmi_buds_5_pro_control_long_tap_settings_left";
+    public static final String PREF_REDMI_BUDS_5_PRO_CONTROL_LONG_TAP_SETTINGS_RIGHT ="pref_redmi_buds_5_pro_control_long_tap_settings_right";
+    public static final String PREF_REDMI_BUDS_5_PRO_WEARING_DETECTION="pref_redmi_buds_5_pro_wearing_detection";
+    public static final String PREF_REDMI_BUDS_5_PRO_AUTO_REPLY_PHONECALL="pref_redmi_buds_5_pro_auto_reply_phonecall";
+    public static final String PREF_REDMI_BUDS_5_PRO_DOUBLE_CONNECTION="pref_redmi_buds_5_pro_double_connection";
+//    public static final String PREF_REDMI_BUDS_5_PRO_SURROUND_SOUND="pref_redmi_buds_5_pro_surround_sound";
+//    public static final String PREF_REDMI_BUDS_5_PRO_SURROUND_SOUND_MODE="pref_redmi_buds_5_pro_surround_sound_mode";
+    public static final String PREF_REDMI_BUDS_5_PRO_EQUALIZER_PRESET="pref_redmi_buds_5_pro_equalizer_preset";
+    public static final String PREF_REDMI_BUDS_5_PRO_EQUALIZER_BAND_62="pref_redmi_buds_5_pro_equalizer_band_62";
+    public static final String PREF_REDMI_BUDS_5_PRO_EQUALIZER_BAND_125="pref_redmi_buds_5_pro_equalizer_band_125";
+    public static final String PREF_REDMI_BUDS_5_PRO_EQUALIZER_BAND_250="pref_redmi_buds_5_pro_equalizer_band_250";
+    public static final String PREF_REDMI_BUDS_5_PRO_EQUALIZER_BAND_500="pref_redmi_buds_5_pro_equalizer_band_500";
+    public static final String PREF_REDMI_BUDS_5_PRO_EQUALIZER_BAND_1k="pref_redmi_buds_5_pro_equalizer_band_1k";
+    public static final String PREF_REDMI_BUDS_5_PRO_EQUALIZER_BAND_2k="pref_redmi_buds_5_pro_equalizer_band_2k";
+    public static final String PREF_REDMI_BUDS_5_PRO_EQUALIZER_BAND_4k="pref_redmi_buds_5_pro_equalizer_band_4k";
+    public static final String PREF_REDMI_BUDS_5_PRO_EQUALIZER_BAND_8k="pref_redmi_buds_5_pro_equalizer_band_8k";
+    public static final String PREF_REDMI_BUDS_5_PRO_EQUALIZER_BAND_12k="pref_redmi_buds_5_pro_equalizer_band_12k";
+    public static final String PREF_REDMI_BUDS_5_PRO_EQUALIZER_BAND_16k="pref_redmi_buds_5_pro_equalizer_band_16k";
+    public static final String PREF_REDMI_BUDS_5_PRO_ADAPTIVE_SOUND="pref_redmi_buds_5_pro_adaptive_sound";
 
     public static final String PREF_SONY_AUDIO_CODEC = "pref_sony_audio_codec";
     public static final String PREF_SONY_PROTOCOL_VERSION = "pref_protocol_version";
@@ -459,6 +505,13 @@ public class DeviceSettingsPreferenceConst {
     public static final String PREF_MISCALE_WEIGHT_UNIT = "pref_miscale_weight_unit";
     public static final String PREF_MISCALE_SMALL_OBJECTS = "pref_miscale_small_objects";
 
+    public static final String PREF_MIJIA_LYWSD_COMFORT_CHARACTERISTIC_LENGTH = "pref_mijia_lywsd_comfort_characteristic_length";
+    public static final String PREF_MIJIA_LYWSD_COMFORT_LEVEL = "pref_mijia_lywsd_comfort_level";
+    public static final String PREF_MIJIA_LYWSD_COMFORT_TEMPERATURE_LOWER = "pref_mijia_lywsd_comfort_temperature_lower";
+    public static final String PREF_MIJIA_LYWSD_COMFORT_TEMPERATURE_UPPER = "pref_mijia_lywsd_comfort_temperature_upper";
+    public static final String PREF_MIJIA_LYWSD_COMFORT_HUMIDITY_LOWER = "pref_mijia_lywsd_comfort_humidity_lower";
+    public static final String PREF_MIJIA_LYWSD_COMFORT_HUMIDITY_UPPER = "pref_mijia_lywsd_comfort_humidity_upper";
+
     public static final String PREF_QC35_NOISE_CANCELLING_LEVEL = "qc35_noise_cancelling_level";
 
     public static final String PREFS_ACTIVITY_IN_DEVICE_CARD = "prefs_activity_in_device_card";
@@ -473,6 +526,10 @@ public class DeviceSettingsPreferenceConst {
 
     public static final String PREF_VESC_MINIMUM_VOLTAGE = "vesc_minimum_battery_voltage";
     public static final String PREF_VESC_MAXIMUM_VOLTAGE = "vesc_maximum_battery_voltage";
+
+    public static final String PREF_IDASEN_SIT_HEIGHT = "idasen_sit_height";
+    public static final String PREF_IDASEN_MID_HEIGHT = "idasen_mid_height";
+    public static final String PREF_IDASEN_STAND_HEIGHT = "idasen_stand_height";
 
     public static final String PREF_SOUNDS = "sounds";
     public static final String PREF_AUTH_KEY = "authkey";
@@ -532,4 +589,14 @@ public class DeviceSettingsPreferenceConst {
     public static final String PREFS_KEY_DEVICE_BLE_API_DEVICE_READ_WRITE = "prefs_device_ble_api_characteristic_read_write";
     public static final String PREFS_KEY_DEVICE_BLE_API_DEVICE_NOTIFY = "prefs_device_ble_api_characteristic_notify";
     public static final String PREFS_KEY_DEVICE_BLE_API_PACKAGE = "prefs_device_ble_api_package";
+
+    public static final String PREF_BATTERY_DISCHARGE_INTERVAL1_WATT = "battery_discharge_interval1_watt";
+    public static final String PREF_BATTERY_DISCHARGE_INTERVAL2_WATT = "battery_discharge_interval2_watt";
+    public static final String PREF_BATTERY_DISCHARGE_INTERVAL3_WATT = "battery_discharge_interval3_watt";
+    public static final String PREF_BATTERY_DISCHARGE_INTERVAL4_WATT = "battery_discharge_interval4_watt";
+    public static final String PREF_BATTERY_DISCHARGE_INTERVAL5_WATT = "battery_discharge_interval5_watt";
+    public static final String PREF_BATTERY_DISCHARGE_INTERVALS_SET = "battery_discharge_intervals_set";
+    public static final String PREF_BATTERY_DISCHARGE_MANAUAL = "battery_discharge_manual";
+    public static final String PREF_BATTERY_MINIMUM_CHARGE = "battery_minimum_charge";
+    public static final String PREF_BATTERY_ALLOW_PASS_THOUGH = "battery_allow_pass_though";
 }

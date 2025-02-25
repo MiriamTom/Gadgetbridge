@@ -4,6 +4,8 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.location.Location;
 import android.net.Uri;
 import android.widget.Toast;
@@ -36,6 +38,7 @@ import nodomain.freeyourgadget.gadgetbridge.database.DBHandler;
 import nodomain.freeyourgadget.gadgetbridge.deviceevents.GBDeviceEvent;
 import nodomain.freeyourgadget.gadgetbridge.devices.PendingFileProvider;
 import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminCoordinator;
+import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminFitFileInstallHandler;
 import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminGpxRouteInstallHandler;
 import nodomain.freeyourgadget.gadgetbridge.devices.garmin.GarminPreferences;
 import nodomain.freeyourgadget.gadgetbridge.devices.vivomovehr.GarminCapability;
@@ -102,7 +105,8 @@ public class GarminSupport extends AbstractBTLEDeviceSupport implements ICommuni
 
     public GarminSupport() {
         super(LOG);
-        addSupportedService(CommunicatorV1.UUID_SERVICE_GARMIN_GFDI);
+        addSupportedService(CommunicatorV1.UUID_SERVICE_GARMIN_GFDI_V0);
+        addSupportedService(CommunicatorV1.UUID_SERVICE_GARMIN_GFDI_V1);
         addSupportedService(CommunicatorV2.UUID_SERVICE_GARMIN_ML_GFDI);
         protocolBufferHandler = new ProtocolBufferHandler(this);
         fileTransferHandler = new FileTransferHandler(this);
@@ -140,18 +144,24 @@ public class GarminSupport extends AbstractBTLEDeviceSupport implements ICommuni
     protected TransactionBuilder initializeDevice(final TransactionBuilder builder) {
         builder.add(new SetDeviceStateAction(getDevice(), GBDevice.State.INITIALIZING, getContext()));
 
-        if (getSupportedServices().contains(CommunicatorV2.UUID_SERVICE_GARMIN_ML_GFDI)) {
-            communicator = new CommunicatorV2(this);
-        } else if (getSupportedServices().contains(CommunicatorV1.UUID_SERVICE_GARMIN_GFDI)) {
-            communicator = new CommunicatorV1(this);
-        } else {
-            LOG.warn("Failed to find a known Garmin service");
-            builder.add(new SetDeviceStateAction(getDevice(), GBDevice.State.NOT_CONNECTED, getContext()));
-            return builder;
-        }
-
         if (getDevicePrefs().getBoolean(PREF_ALLOW_HIGH_MTU, true)) {
             builder.requestMtu(515);
+        }
+
+        final CommunicatorV2 communicatorV2 = new CommunicatorV2(this);
+        if (communicatorV2.initializeDevice(builder)) {
+            communicator = communicatorV2;
+        } else {
+            // V2 did not manage to initialize, attempt V1
+            final CommunicatorV1 communicatorV1 = new CommunicatorV1(this);
+            if (!communicatorV1.initializeDevice(builder)) {
+                // Neither V1 nor V2 worked, not a Garmin device?
+                LOG.warn("Failed to find a known Garmin service");
+                builder.add(new SetDeviceStateAction(getDevice(), GBDevice.State.NOT_CONNECTED, getContext()));
+                return builder;
+            }
+
+            communicator = communicatorV1;
         }
 
         communicator.initializeDevice(builder);
@@ -230,6 +240,19 @@ public class GarminSupport extends AbstractBTLEDeviceSupport implements ICommuni
 
         processDownloadQueue();
 
+    }
+
+    protected String getNotificationAttachmentPath(int notificationId) {
+        return notificationsHandler.getNotificationAttachmentPath(notificationId);
+    }
+
+    protected Bitmap getNotificationAttachmentBitmap(int notificationId) {
+        final String picturePath = getNotificationAttachmentPath(notificationId);
+        final Bitmap bitmap = BitmapFactory.decodeFile(picturePath);
+        if (bitmap == null) {
+            LOG.warn("Failed to load bitmap for {} from {}", notificationId, picturePath);
+        }
+        return bitmap;
     }
 
     @Override
@@ -821,6 +844,17 @@ public class GarminSupport extends AbstractBTLEDeviceSupport implements ICommuni
 
     @Override
     public void onInstallApp(Uri uri) {
+        final GarminFitFileInstallHandler fitFileInstallHandler = new GarminFitFileInstallHandler(uri, getContext());
+        if (fitFileInstallHandler.isValid()) {
+            communicator.sendMessage(
+                    "upload fit file",
+                    fileTransferHandler.initiateUpload(
+                            fitFileInstallHandler.getRawBytes(),
+                            fitFileInstallHandler.getFileType()
+                    ).getOutgoingMessage()
+            );
+        }
+
         final GarminGpxRouteInstallHandler garminGpxRouteInstallHandler = new GarminGpxRouteInstallHandler(uri, getContext());
         if (garminGpxRouteInstallHandler.isValid()) {
             communicator.sendMessage("upload course file", fileTransferHandler.initiateUpload(garminGpxRouteInstallHandler.getGpxRouteFileConverter().getConvertedFile().getOutgoingMessage(), FileType.FILETYPE.DOWNLOAD_COURSE).getOutgoingMessage());

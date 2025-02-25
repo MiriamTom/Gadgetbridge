@@ -100,6 +100,27 @@ public abstract class AbstractTimeSampleProvider<T extends AbstractTimeSample> i
         return samples.get(0);
     }
 
+    @Nullable
+    @Override
+    public T getLatestSample(final long until) {
+        final QueryBuilder<T> qb = getSampleDao().queryBuilder();
+        final Device dbDevice = DBHelper.findDevice(getDevice(), getSession());
+        if (dbDevice == null) {
+            // no device, no sample
+            return null;
+        }
+        final Property deviceProperty = getDeviceIdentifierSampleProperty();
+        qb.where(getTimestampSampleProperty().le(until))
+                .where(deviceProperty.eq(dbDevice.getId()))
+                .orderDesc(getTimestampSampleProperty()).limit(1);
+        final List<T> samples = qb.build().list();
+        if (samples.isEmpty()) {
+            return null;
+        }
+        return samples.get(0);
+    }
+
+    @Nullable
     public T getLastSampleBefore(final long timestampTo) {
         final Device dbDevice = DBHelper.findDevice(getDevice(), getSession());
         if (dbDevice == null) {
@@ -119,6 +140,7 @@ public abstract class AbstractTimeSampleProvider<T extends AbstractTimeSample> i
         return !samples.isEmpty() ? samples.get(0) : null;
     }
 
+    @Nullable
     public T getNextSampleAfter(final long timestampFrom) {
         final Device dbDevice = DBHelper.findDevice(getDevice(), getSession());
         if (dbDevice == null) {
