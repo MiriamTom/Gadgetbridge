@@ -2,6 +2,7 @@ import java.nio.file.Files
 
 apply plugin: "com.android.application"
 apply plugin: 'com.google.protobuf'
+apply plugin: 'com.google.gms.google-services'
 
 tasks.withType(Test) {
     systemProperty "MiFirmwareDir", System.getProperty("MiFirmwareDir", null)
@@ -244,7 +245,7 @@ dependencies {
     implementation 'com.github.wax911.android-emojify:contract:1.9.5'
     implementation 'com.github.wax911.android-emojify:emojify:1.9.5'
     implementation 'com.github.wax911.android-emojify:gson:1.9.5'
-    implementation 'com.google.protobuf:protobuf-javalite:4.29.1'
+   // implementation 'com.google.protobuf:protobuf-javalite:4.29.1'
     implementation 'com.android.volley:volley:1.2.1'
     implementation 'org.msgpack:msgpack-core:0.9.8'
 
@@ -258,11 +259,33 @@ dependencies {
 
     // Fix Duplicate class build error for conflicting kotlin-stdlib versions
     // does not seem to be currently needed, as it uses the latest across all transitive
-    //implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.8.0"))
+    implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.8.0"))
 
     // Needed for Armenian transliteration
     implementation 'org.ahocorasick:ahocorasick:0.6.3'
+
+    implementation(platform("com.google.firebase:firebase-bom:29.2.1")) {
+        exclude group: "com.google.protobuf", module: "protolite-well-known-types"
+    }
+
+    implementation("com.google.firebase:firebase-auth") {
+        exclude group: "com.google.firebase", module: "protolite-well-known-types"
+
+    }
+
+    implementation("com.google.firebase:firebase-firestore") {
+        exclude group: "com.google.firebase", module: "protolite-well-known-types"
+
+    }
+
+    implementation ('com.google.firebase:protolite-well-known-types:18.0.0')
+
+    implementation("com.google.protobuf:protobuf-javalite:4.29.1") {
+        exclude group: "com.google.firebase", module: "protolite-well-known-types"
+
+    }
 }
+
 
 preBuild.dependsOn(":GBDaoGenerator:genSources")
 
@@ -299,4 +322,5 @@ protobuf {
             }
         }
     }
+
 }

@@ -43,7 +43,7 @@ public class GBChangeLog extends ChangeLog {
     protected SparseArray<ReleaseItem> getMasterChangeLog(boolean full) {
         if (GBApplication.isNightly()) {
             try {
-                return readChangeLogFromResource(R.xml.changelog_git, full);
+                //return readChangeLogFromResource(R.xml.changelog_git, full);
             } catch (final Exception e) {
                 // Just in case the git changelog is broken somehow..
                 LOG.error("Failed to read git changelog for nightly", e);

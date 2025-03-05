@@ -22,18 +22,41 @@ import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Build;
 import android.os.SystemClock;
 
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.gson.Gson;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.zip.GZIPOutputStream;
 
+import de.greenrobot.dao.AbstractDao;
+import de.greenrobot.dao.Property;
+import de.greenrobot.dao.internal.DaoConfig;
 import nodomain.freeyourgadget.gadgetbridge.BuildConfig;
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
 import nodomain.freeyourgadget.gadgetbridge.R;
+import nodomain.freeyourgadget.gadgetbridge.entities.DaoSession;
 import nodomain.freeyourgadget.gadgetbridge.util.GB;
 import nodomain.freeyourgadget.gadgetbridge.util.GBPrefs;
 import nodomain.freeyourgadget.gadgetbridge.util.PendingIntentUtils;
@@ -116,17 +139,202 @@ public class PeriodicExporter extends BroadcastReceiver {
                 Uri dstUri = Uri.parse(dst);
                 try (OutputStream out = localContext.getContentResolver().openOutputStream(dstUri)) {
                     helper.exportDB(dbHandler, out);
+
                     GBApplication gbApp = GBApplication.app();
                     gbApp.setLastAutoExportTimestamp(System.currentTimeMillis());
                 }
 
                 broadcastSuccess(true);
+                // TODO
+                // Get the DaoSession
+                LOG.info("Retrieving DaoSession from DBHandler");
+                DaoSession daoSession = dbHandler.getDaoSession();
+                if (daoSession == null) {
+                    LOG.error("DaoSession is null");
+                    broadcastSuccess(false);
+                    return;
+                }
+// Convert the database to JSON
+                LOG.info("Converting database to JSON");
+                String jsonData = convertDbToJson(daoSession);
+                if (jsonData == null || jsonData.isEmpty()) {
+                    LOG.error("Failed to convert database to JSON");
+                    broadcastSuccess(false);
+                    return;
+                }
+                LOG.info("Database converted to JSON successfully");
 
+// Compress JSON data
+                LOG.info("Compressing JSON data");
+                byte[] compressedData = compressJsonData(jsonData);
+                if (compressedData == null) {
+                    LOG.error("Failed to compress JSON data");
+                    broadcastSuccess(false);
+                    return;
+                }
+                LOG.info("JSON data compressed successfully");
+
+// Log sizes for debugging
+                LOG.info("Original JSON data size: " + jsonData.getBytes(StandardCharsets.UTF_8).length + " bytes");
+                LOG.info("Compressed JSON data size: " + compressedData.length + " bytes");
+
+// Encode byte[] as Base64
+                String compressedDataBase64 = Base64.getEncoder().encodeToString(compressedData);
+
+// Create the Firestore data object
+                Map<String, Object> dbData = new HashMap<>();
+                dbData.put("data", compressedDataBase64); // Store Base64-encoded string
+                dbData.put("timestamp", System.currentTimeMillis());
+
+// Upload compressed JSON data to Firestore
+                LOG.info("Uploading compressed JSON data to Firestore");
+                FirebaseFirestore db = FirebaseFirestore.getInstance();
+                if (db == null) {
+                    LOG.error("Firestore instance is null. Firebase might not be initialized.");
+                    broadcastSuccess(false);
+                    return;
+                }
+
+                db.collection("databases")
+                        .document(String.valueOf(System.currentTimeMillis()))
+                        .set(dbData)
+                        .addOnSuccessListener(aVoid -> {
+                            // Update the last export timestamp
+                            SharedPreferences prefs = (SharedPreferences) GBApplication.getPrefs();
+                            SharedPreferences.Editor editor = prefs.edit();
+                            editor.putLong("last_export_timestamp", System.currentTimeMillis());
+                            editor.apply();
+
+                            GBApplication gbApp = GBApplication.app();
+                            gbApp.setLastAutoExportTimestamp(System.currentTimeMillis());
+                            broadcastSuccess(true);
+                            LOG.info("DB export and Firestore upload completed");
+                        })
+                        .addOnFailureListener(e -> {
+                            GB.updateExportFailedNotification(localContext.getString(R.string.notif_export_failed_title), localContext);
+                            LOG.error("Exception while uploading DB to Firestore: ", e);
+                            e.printStackTrace(); // Print the full stack trace
+                            broadcastSuccess(false);
+                        });
                 LOG.info("DB export completed");
             } catch (Exception ex) {
                 GB.updateExportFailedNotification(localContext.getString(R.string.notif_export_failed_title), localContext);
-                LOG.info("Exception while exporting DB: ", ex);
+                LOG.error("Exception while exporting DB: ", ex);
                 broadcastSuccess(false);
+            }
+        }
+
+        private byte[] compressJsonData(String jsonData) {
+            try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                 GZIPOutputStream gzip = new GZIPOutputStream(bos)) {
+                gzip.write(jsonData.getBytes(StandardCharsets.UTF_8));
+                gzip.finish();
+                return bos.toByteArray();
+            } catch (IOException e) {
+                LOG.error("Failed to compress JSON data", e);
+                return null;
+            }
+        }
+        private String convertDbToJson(DaoSession daoSession) {
+            List<Map<String, Object>> data = Collections.synchronizedList(new ArrayList<>());
+            ExecutorService executor = Executors.newFixedThreadPool(4); // Adjust thread pool size as needed
+
+            Collection<AbstractDao<?, ?>> daos = daoSession.getAllDaos();
+            if (daos == null || daos.isEmpty()) {
+                LOG.error("No DAOs found in DaoSession");
+                return null;
+            }
+
+            for (AbstractDao<?, ?> dao : daos) {
+                executor.submit(() -> {
+                    String tableName = dao.getTablename();
+                    if (tableName.equals("sqlite_sequence") || tableName.equals("android_metadata")) {
+                        return; // Skip system tables
+                    }
+
+                    List<?> entities = dao.loadAll();
+                    if (entities == null || entities.isEmpty()) {
+                        return;
+                    }
+
+                    Class<?> propertiesClass = getPropertiesClass(dao);
+                    if (propertiesClass == null) {
+                        return;
+                    }
+
+                    Property[] properties = getProperties(propertiesClass);
+                    if (properties == null) {
+                        return;
+                    }
+
+                    for (Object entity : entities) {
+                        Map<String, Object> row = new HashMap<>();
+                        boolean hasNonNullValue = false;
+
+                        for (Property property : properties) {
+                            try {
+                                Field field = entity.getClass().getDeclaredField(property.name);
+                                field.setAccessible(true);
+                                Object value = field.get(entity);
+
+                                if (value != null) {
+                                    hasNonNullValue = true;
+                                    row.put(property.columnName, value);
+                                }
+                            } catch (Exception e) {
+                                LOG.error("Failed to access property: " + property.name, e);
+                            }
+                        }
+
+                        if (hasNonNullValue) {
+                            row.put("table_name", tableName);
+                            data.add(row);
+                        }
+                    }
+                });
+            }
+
+            executor.shutdown();
+            try {
+                executor.awaitTermination(3, TimeUnit.MINUTES); // Adjust timeout as needed
+            } catch (InterruptedException e) {
+                LOG.error("Thread pool interrupted", e);
+            }
+
+            Gson gson = new Gson();
+            return gson.toJson(data);
+        }
+        /**
+         * Helper method to get the Properties class for a DAO.
+         */
+        private Class<?> getPropertiesClass(AbstractDao<?, ?> dao) {
+            try {
+                String daoClassName = dao.getClass().getName();
+                String propertiesClassName = daoClassName.replace("Dao", "Dao$Properties");
+                return Class.forName(propertiesClassName);
+            } catch (ClassNotFoundException e) {
+                LOG.error("Properties class not found for DAO: " + dao.getClass().getSimpleName(), e);
+                return null;
+            }
+        }
+
+        /**
+         * Helper method to get the Property objects from a Properties class.
+         */
+        private Property[] getProperties(Class<?> propertiesClass) {
+            try {
+                Field[] fields = propertiesClass.getDeclaredFields();
+                List<Property> properties = new ArrayList<>();
+                for (Field field : fields) {
+                    if (field.getType() == Property.class) {
+                        field.setAccessible(true);
+                        properties.add((Property) field.get(null));
+                    }
+                }
+                return properties.toArray(new Property[0]);
+            } catch (Exception e) {
+                LOG.error("Failed to get properties from Properties class: " + propertiesClass.getSimpleName(), e);
+                return null;
             }
         }
 

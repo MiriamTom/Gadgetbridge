@@ -109,6 +109,10 @@ import static nodomain.freeyourgadget.gadgetbridge.model.DeviceType.WATCHXPLUS;
 import static nodomain.freeyourgadget.gadgetbridge.util.GB.NOTIFICATION_CHANNEL_HIGH_PRIORITY_ID;
 import static nodomain.freeyourgadget.gadgetbridge.util.GB.NOTIFICATION_ID_ERROR;
 
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.firestore.FirebaseFirestore;
+
+
 import org.apache.commons.lang3.StringUtils;
 import org.json.JSONObject;
 
@@ -217,6 +221,8 @@ public class GBApplication extends Application {
     public void onCreate() {
         app = this;
         super.onCreate();
+
+        FirebaseApp.initializeApp(this);
 
         if (lockHandler != null) {
             // guard against multiple invocations (robolectric)
