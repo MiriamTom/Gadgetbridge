@@ -222,6 +222,7 @@ public class GBApplication extends Application {
         app = this;
         super.onCreate();
 
+
         FirebaseApp.initializeApp(this);
 
         if (lockHandler != null) {

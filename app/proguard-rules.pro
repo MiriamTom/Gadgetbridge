@@ -78,15 +78,8 @@
 # Keep generated protobuf classes
 -keep class nodomain.freeyourgadget.gadgetbridge.proto.** { *; }
 
-# Keep generated protobuf classes
-
-# Keep Firestore and Protobuf classes
--keep class com.google.firebase.firestore.** { *; }
--keep class com.google.protobuf.** { *; }
 -keep class com.google.type.** { *; }
-
-# Keep Firebase annotations
--keep @com.google.firebase.annotations.** class * { *; }
+-keep class com.google.protobuf.** { *; }
 
 
 

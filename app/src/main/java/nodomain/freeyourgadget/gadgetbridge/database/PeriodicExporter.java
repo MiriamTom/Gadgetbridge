@@ -27,6 +27,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.SystemClock;
 
+import com.google.firebase.FirebaseApp;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.gson.Gson;
 
@@ -188,6 +189,7 @@ public class PeriodicExporter extends BroadcastReceiver {
 
 // Upload compressed JSON data to Firestore
                 LOG.info("Uploading compressed JSON data to Firestore");
+
                 FirebaseFirestore db = FirebaseFirestore.getInstance();
                 if (db == null) {
                     LOG.error("Firestore instance is null. Firebase might not be initialized.");
@@ -195,27 +197,17 @@ public class PeriodicExporter extends BroadcastReceiver {
                     return;
                 }
 
-                db.collection("databases")
-                        .document(String.valueOf(System.currentTimeMillis()))
-                        .set(dbData)
-                        .addOnSuccessListener(aVoid -> {
-                            // Update the last export timestamp
-                            SharedPreferences prefs = (SharedPreferences) GBApplication.getPrefs();
-                            SharedPreferences.Editor editor = prefs.edit();
-                            editor.putLong("last_export_timestamp", System.currentTimeMillis());
-                            editor.apply();
-
-                            GBApplication gbApp = GBApplication.app();
-                            gbApp.setLastAutoExportTimestamp(System.currentTimeMillis());
+                db.collection("databases") // 🔥 No `document()`, Firestore creates ID automatically
+                        .add(dbData) // ✅ Correct usage of `add()`
+                        .addOnSuccessListener(documentReference -> {
+                            LOG.info("DB export completed. Document ID: " + documentReference.getId());
                             broadcastSuccess(true);
-                            LOG.info("DB export and Firestore upload completed");
                         })
                         .addOnFailureListener(e -> {
-                            GB.updateExportFailedNotification(localContext.getString(R.string.notif_export_failed_title), localContext);
                             LOG.error("Exception while uploading DB to Firestore: ", e);
-                            e.printStackTrace(); // Print the full stack trace
                             broadcastSuccess(false);
                         });
+
                 LOG.info("DB export completed");
             } catch (Exception ex) {
                 GB.updateExportFailedNotification(localContext.getString(R.string.notif_export_failed_title), localContext);
