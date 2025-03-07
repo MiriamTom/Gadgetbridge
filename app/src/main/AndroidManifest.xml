@@ -42,8 +42,8 @@
     <uses-permission android:name="me.hackerchick.catima.READ_CARDS"/>
     <uses-permission android:name="me.hackerchick.catima.debug.READ_CARDS"/>
 
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission
         android:name="android.permission.MEDIA_CONTENT_CONTROL"
@@ -78,7 +78,11 @@
 
     <uses-permission android:name="android.permission.CAMERA"/>
 
+    <!--Permissions for firesore-->
+
     <uses-permission android:name="com.google.android.gms.permission.ACTIVITY_RECOGNITION" />
+
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
 
     <!--
     SDK 30 & Android 11 - Used for getting app name from notifications, and for starting
@@ -627,7 +631,8 @@
             android:label="@string/title_activity_appmanager"
             android:launchMode="singleTop"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|layoutDirection|uiMode"
-            android:parentActivityName=".activities.ControlCenterv2" />
+            android:parentActivityName=".activities.ControlCenterv2"
+            tools:node="replace"/>
         <activity
             android:name=".devices.miband.MiBandPairingActivity"
             android:label="@string/title_activity_mi_band_pairing" />

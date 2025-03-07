@@ -155,7 +155,7 @@ public class PeriodicExporter extends BroadcastReceiver {
                     broadcastSuccess(false);
                     return;
                 }
-// Convert the database to JSON
+                // Convert DB data to JSON using DaoSession
                 LOG.info("Converting database to JSON");
                 String jsonData = convertDbToJson(daoSession);
                 if (jsonData == null || jsonData.isEmpty()) {
@@ -165,7 +165,7 @@ public class PeriodicExporter extends BroadcastReceiver {
                 }
                 LOG.info("Database converted to JSON successfully");
 
-// Compress JSON data
+                // Compress JSON data
                 LOG.info("Compressing JSON data");
                 byte[] compressedData = compressJsonData(jsonData);
                 if (compressedData == null) {
@@ -175,38 +175,15 @@ public class PeriodicExporter extends BroadcastReceiver {
                 }
                 LOG.info("JSON data compressed successfully");
 
-// Log sizes for debugging
+                // Log sizes for debugging
                 LOG.info("Original JSON data size: " + jsonData.getBytes(StandardCharsets.UTF_8).length + " bytes");
                 LOG.info("Compressed JSON data size: " + compressedData.length + " bytes");
 
-// Encode byte[] as Base64
+                // Encode byte[] as Base64 (could be customized to other encodings if needed)
                 String compressedDataBase64 = Base64.getEncoder().encodeToString(compressedData);
 
-// Create the Firestore data object
-                Map<String, Object> dbData = new HashMap<>();
-                dbData.put("data", compressedDataBase64); // Store Base64-encoded string
-                dbData.put("timestamp", System.currentTimeMillis());
-
-// Upload compressed JSON data to Firestore
-                LOG.info("Uploading compressed JSON data to Firestore");
-
-                FirebaseFirestore db = FirebaseFirestore.getInstance();
-                if (db == null) {
-                    LOG.error("Firestore instance is null. Firebase might not be initialized.");
-                    broadcastSuccess(false);
-                    return;
-                }
-
-                db.collection("databases") // 🔥 No `document()`, Firestore creates ID automatically
-                        .add(dbData) // ✅ Correct usage of `add()`
-                        .addOnSuccessListener(documentReference -> {
-                            LOG.info("DB export completed. Document ID: " + documentReference.getId());
-                            broadcastSuccess(true);
-                        })
-                        .addOnFailureListener(e -> {
-                            LOG.error("Exception while uploading DB to Firestore: ", e);
-                            broadcastSuccess(false);
-                        });
+                // Upload data to Firestore
+                uploadDataToFirestore(compressedDataBase64);
 
                 LOG.info("DB export completed");
             } catch (Exception ex) {
@@ -227,74 +204,95 @@ public class PeriodicExporter extends BroadcastReceiver {
                 return null;
             }
         }
-        private String convertDbToJson(DaoSession daoSession) {
-            List<Map<String, Object>> data = Collections.synchronizedList(new ArrayList<>());
-            ExecutorService executor = Executors.newFixedThreadPool(4); // Adjust thread pool size as needed
 
+        private String convertDbToJson(DaoSession daoSession) {
+            List<Map<String, Object>> data = new ArrayList<>();
+
+            // Retrieve all DAOs from the DaoSession
             Collection<AbstractDao<?, ?>> daos = daoSession.getAllDaos();
             if (daos == null || daos.isEmpty()) {
                 LOG.error("No DAOs found in DaoSession");
                 return null;
             }
 
+            // Iterate over DAOs and extract data
             for (AbstractDao<?, ?> dao : daos) {
-                executor.submit(() -> {
-                    String tableName = dao.getTablename();
-                    if (tableName.equals("sqlite_sequence") || tableName.equals("android_metadata")) {
-                        return; // Skip system tables
-                    }
+                String tableName = dao.getTablename();
+                if (tableName.equals("sqlite_sequence") || tableName.equals("android_metadata")) {
+                    continue; // Skip system tables
+                }
 
-                    List<?> entities = dao.loadAll();
-                    if (entities == null || entities.isEmpty()) {
-                        return;
-                    }
+                List<?> entities = dao.loadAll();
+                if (entities == null || entities.isEmpty()) {
+                    continue;
+                }
 
-                    Class<?> propertiesClass = getPropertiesClass(dao);
-                    if (propertiesClass == null) {
-                        return;
-                    }
+                Class<?> propertiesClass = getPropertiesClass(dao);
+                if (propertiesClass == null) {
+                    continue;
+                }
 
-                    Property[] properties = getProperties(propertiesClass);
-                    if (properties == null) {
-                        return;
-                    }
+                Property[] properties = getProperties(propertiesClass);
+                if (properties == null) {
+                    continue;
+                }
 
-                    for (Object entity : entities) {
-                        Map<String, Object> row = new HashMap<>();
-                        boolean hasNonNullValue = false;
+                for (Object entity : entities) {
+                    Map<String, Object> row = new HashMap<>();
+                    boolean hasNonNullValue = false;
 
-                        for (Property property : properties) {
-                            try {
-                                Field field = entity.getClass().getDeclaredField(property.name);
-                                field.setAccessible(true);
-                                Object value = field.get(entity);
+                    for (Property property : properties) {
+                        try {
+                            Field field = entity.getClass().getDeclaredField(property.name);
+                            field.setAccessible(true);
+                            Object value = field.get(entity);
 
-                                if (value != null) {
-                                    hasNonNullValue = true;
-                                    row.put(property.columnName, value);
-                                }
-                            } catch (Exception e) {
-                                LOG.error("Failed to access property: " + property.name, e);
+                            if (value != null) {
+                                hasNonNullValue = true;
+                                row.put(property.columnName, value);
                             }
-                        }
-
-                        if (hasNonNullValue) {
-                            row.put("table_name", tableName);
-                            data.add(row);
+                        } catch (Exception e) {
+                            LOG.error("Failed to access property: " + property.name, e);
                         }
                     }
-                });
-            }
 
-            executor.shutdown();
-            try {
-                executor.awaitTermination(3, TimeUnit.MINUTES); // Adjust timeout as needed
-            } catch (InterruptedException e) {
-                LOG.error("Thread pool interrupted", e);
+                    if (hasNonNullValue) {
+                        row.put("table_name", tableName);
+                        data.add(row);
+                    }
+                }
             }
 
             Gson gson = new Gson();
             return gson.toJson(data);
+        }
+
+        private void uploadDataToFirestore(String compressedDataBase64) {
+            LOG.info("Uploading data to Firestore");
+
+            FirebaseFirestore db = FirebaseFirestore.getInstance();
+            if (db == null) {
+                LOG.error("Firestore instance is null. Firebase might not be initialized.");
+                broadcastSuccess(false);
+                return;
+            }
+
+            // Create Firestore data object
+            Map<String, Object> dbData = new HashMap<>();
+            dbData.put("data", compressedDataBase64); // Store Base64-encoded string
+            dbData.put("timestamp", System.currentTimeMillis());
+
+            // Upload to Firestore
+            db.collection("databases") // Firestore automatically generates the document ID
+                    .add(dbData)
+                    .addOnSuccessListener(documentReference -> {
+                        LOG.info("DB export completed. Document ID: " + documentReference.getId());
+                        broadcastSuccess(true);
+                    })
+                    .addOnFailureListener(e -> {
+                        LOG.error("Exception while uploading DB to Firestore: ", e);
+                        broadcastSuccess(false);
+                    });
         }
         /**
          * Helper method to get the Properties class for a DAO.
@@ -329,6 +327,9 @@ public class PeriodicExporter extends BroadcastReceiver {
                 return null;
             }
         }
+
+        /* End of integrations with Firestore
+         */
 
         private void broadcastSuccess(final boolean success) {
             if (!GBApplication.getPrefs().getBoolean("intent_api_broadcast_export", false)) {

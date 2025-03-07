@@ -59,7 +59,9 @@ def getGitHashShort = { ->
         return null
     }
 }
-
+configurations.all {
+    exclude group: 'com.google.protobuf', module: 'protobuf-lite'
+}
 android {
     compileOptions {
         coreLibraryDesugaringEnabled true
@@ -245,7 +247,7 @@ dependencies {
     implementation 'com.github.wax911.android-emojify:contract:1.9.5'
     implementation 'com.github.wax911.android-emojify:emojify:1.9.5'
     implementation 'com.github.wax911.android-emojify:gson:1.9.5'
-    implementation 'com.google.protobuf:protobuf-javalite:4.29.1'
+   // implementation 'com.google.protobuf:protobuf-javalite:4.29.1'
     implementation 'com.android.volley:volley:1.2.1'
     implementation 'org.msgpack:msgpack-core:0.9.8'
 
@@ -265,9 +267,17 @@ dependencies {
     implementation 'org.ahocorasick:ahocorasick:0.6.3'
 
 
-    implementation ('com.google.firebase:firebase-firestore:24.9.1') {
-        exclude group: "com.google.firebase", module: "protolite-well-known-types"
+        // Firebase Firestore without protolite-well-known-types
+        implementation ('com.google.firebase:firebase-firestore:24.9.1') {
+            exclude group: "com.google.firebase", module: "protolite-well-known-types"
+        }
+
+    implementation ('com.google.firebase:protolite-well-known-types:18.0.0') {
+        exclude group: "com.google.protobuf", module: "protobuf-javalite"
     }
+
+        // Explicitly add protobuf-javalite
+        implementation 'com.google.protobuf:protobuf-javalite:4.29.1'
 
     implementation 'com.google.android.gms:play-services-base:18.3.0'
 }
