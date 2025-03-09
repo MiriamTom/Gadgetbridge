@@ -236,10 +236,16 @@ public class PeriodicExporter extends BroadcastReceiver {
                 if (properties == null) {
                     continue;
                 }
+                /**
+                 * Getting the last timestamp of the auto-export
+                 */
+                long lastExportTimestamp = GBApplication.app().getLastAutoExportTimestamp();
 
                 for (Object entity : entities) {
                     Map<String, Object> row = new HashMap<>();
                     boolean hasNonNullValue = false;
+
+                    long recordTimestamp = 0;
 
                     for (Property property : properties) {
                         try {
@@ -250,6 +256,10 @@ public class PeriodicExporter extends BroadcastReceiver {
                             if (value != null) {
                                 hasNonNullValue = true;
                                 row.put(property.columnName, value);
+
+                                if (property.columnName.equals("timestamp") && value instanceof Number) {
+                                    recordTimestamp = ((Number) value).longValue();
+                                }
                             }
                         } catch (Exception e) {
                             LOG.error("Failed to access property: " + property.name, e);
@@ -257,8 +267,10 @@ public class PeriodicExporter extends BroadcastReceiver {
                     }
 
                     if (hasNonNullValue) {
-                        row.put("table_name", tableName);
-                        data.add(row);
+                        if (recordTimestamp == 0 || recordTimestamp > lastExportTimestamp) {
+                            row.put("table_name", tableName);
+                            data.add(row);
+                        }
                     }
                 }
             }
