@@ -406,12 +406,15 @@ public class ProtocolBufferHandler implements MessageHandler {
 
     private GdiSmartProto.Smart processProtobufSmsNotificationMessage(GdiSmsNotification.SmsNotificationService smsNotificationService) {
         if (smsNotificationService.hasSmsCannedListRequest()) {
+            LOG.warn("Protobuf smsNotificationService request disabled: {}", smsNotificationService);
+            return null;
+            /*
             LOG.debug("Got request for sms canned list");
 
             // Mark canned messages as supported
             deviceSupport.evaluateGBDeviceEvent(new GBDeviceEventUpdatePreferences(GarminPreferences.PREF_FEAT_CANNED_MESSAGES, true));
 
-            List<GdiSmsNotification.SmsNotificationService.CannedListType> requestedTypes = smsNotificationService.getSmsCannedListRequest().getRequestedTypesList();
+            List<GdiSmsNotification.SmsNotificationService.CannedListType> requestedTypes = smsNotificationService.getSmsCannedListRequest().getRequestedTypesMap();
 
             populateCannedListTypeMap(requestedTypes);
 
@@ -433,6 +436,7 @@ public class ProtocolBufferHandler implements MessageHandler {
                 builder.setStatus(GdiSmsNotification.SmsNotificationService.ResponseStatus.GENERIC_ERROR);
 
             return GdiSmartProto.Smart.newBuilder().setSmsNotificationService(GdiSmsNotification.SmsNotificationService.newBuilder().setSmsCannedListResponse(builder)).build();
+        */
         } else {
             LOG.warn("Protobuf smsNotificationService request not implemented: {}", smsNotificationService);
             return null;
@@ -547,6 +551,7 @@ public class ProtocolBufferHandler implements MessageHandler {
 
         this.cannedListTypeMap.put(cannedListType, cannedMessagesSpec.cannedMessages);
 
+        /*
         GdiSmartProto.Smart smart = GdiSmartProto.Smart.newBuilder()
                 .setSmsNotificationService(GdiSmsNotification.SmsNotificationService.newBuilder()
                         .setSmsCannedListChangedNotification(
@@ -555,6 +560,8 @@ public class ProtocolBufferHandler implements MessageHandler {
                 ).build();
 
         return prepareProtobufRequest(smart);
+         */
+        return null;
     }
 
     private class ProtobufFragment {

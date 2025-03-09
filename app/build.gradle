@@ -60,7 +60,7 @@ def getGitHashShort = { ->
     }
 }
 configurations.all {
-    exclude group: 'com.google.protobuf', module: 'protobuf-lite'
+    //exclude group: 'com.google.protobuf', module: 'protolite-well-known-types'
 }
 android {
     compileOptions {
@@ -266,11 +266,20 @@ dependencies {
     // Needed for Armenian transliteration
     implementation 'org.ahocorasick:ahocorasick:0.6.3'
 
+    //fix Camera API ?
+    implementation("com.google.guava:guava:33.0.0-jre")
 
+    // Firebase
+    implementation(platform("com.google.firebase:firebase-bom:33.10.0"))
+    implementation("com.google.firebase:firebase-messaging")
+    implementation("com.google.firebase:firebase-firestore")
+
+/*
         // Firebase Firestore without protolite-well-known-types
-        implementation ('com.google.firebase:firebase-firestore:24.9.1') {
+        implementation ('com.google.firebase:firebase-firestore:24.9.1')// {
             exclude group: "com.google.firebase", module: "protolite-well-known-types"
         }
+
 
     implementation ('com.google.firebase:protolite-well-known-types:18.0.0') {
         exclude group: "com.google.protobuf", module: "protobuf-javalite"
@@ -278,7 +287,7 @@ dependencies {
 
         // Explicitly add protobuf-javalite
         implementation 'com.google.protobuf:protobuf-javalite:4.29.1'
-
+*/
     implementation 'com.google.android.gms:play-services-base:18.3.0'
 }
 

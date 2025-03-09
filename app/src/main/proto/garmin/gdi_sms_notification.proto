@@ -21,21 +21,21 @@ message SmsNotificationService {
     }
 
     message SmsCannedListChangedNotification {
-        repeated CannedListType changed_type = 1;
+        map<int32, bool> changed_type = 1;
     }
 
     message SmsCannedListRequest {
-        repeated CannedListType requested_types = 1;
+        map<int32, bool> requested_types = 1;
     }
 
     message SmsCannedListResponse {
         optional ResponseStatus status = 1;
-        repeated SmsCannedList lists = 2;
+        map<int32, SmsCannedList> lists = 2;
     }
 
     message SmsCannedList {
         optional CannedListType type = 1;
-        repeated string response = 2;
+        map<int32, string> response = 2;
     }
 
     enum CannedListType {
