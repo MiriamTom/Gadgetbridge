@@ -289,6 +289,8 @@ dependencies {
         implementation 'com.google.protobuf:protobuf-javalite:4.29.1'
 */
     implementation 'com.google.android.gms:play-services-base:18.3.0'
+
+    implementation 'org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5'
 }
 
 preBuild.dependsOn(":GBDaoGenerator:genSources")

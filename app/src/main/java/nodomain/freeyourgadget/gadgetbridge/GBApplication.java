@@ -83,6 +83,8 @@ import nodomain.freeyourgadget.gadgetbridge.model.ActivityUser;
 import nodomain.freeyourgadget.gadgetbridge.model.DeviceService;
 import nodomain.freeyourgadget.gadgetbridge.model.DeviceType;
 import nodomain.freeyourgadget.gadgetbridge.model.Weather;
+import nodomain.freeyourgadget.gadgetbridge.service.BluetoothLeService;
+import nodomain.freeyourgadget.gadgetbridge.service.MqttService;
 import nodomain.freeyourgadget.gadgetbridge.service.NotificationCollectorMonitorService;
 import nodomain.freeyourgadget.gadgetbridge.util.AndroidUtils;
 import nodomain.freeyourgadget.gadgetbridge.util.FileUtils;
@@ -224,6 +226,12 @@ public class GBApplication extends Application {
 
 
         FirebaseApp.initializeApp(this);
+
+        Intent serviceIntent = new Intent(this, BluetoothLeService.class);
+        startService(serviceIntent);
+
+        //Intent mqttServiceIntent = new Intent(this, MqttService.class);
+        //startService(mqttServiceIntent);
 
         if (lockHandler != null) {
             // guard against multiple invocations (robolectric)

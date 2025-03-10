@@ -30,6 +30,8 @@ import android.os.SystemClock;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.gson.Gson;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonSyntaxException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -146,7 +148,7 @@ public class PeriodicExporter extends BroadcastReceiver {
                 }
 
                 broadcastSuccess(true);
-                // TODO
+
                 // Get the DaoSession
                 LOG.info("Retrieving DaoSession from DBHandler");
                 DaoSession daoSession = dbHandler.getDaoSession();
@@ -155,6 +157,7 @@ public class PeriodicExporter extends BroadcastReceiver {
                     broadcastSuccess(false);
                     return;
                 }
+
                 // Convert DB data to JSON using DaoSession
                 LOG.info("Converting database to JSON");
                 String jsonData = convertDbToJson(daoSession);
@@ -164,6 +167,13 @@ public class PeriodicExporter extends BroadcastReceiver {
                     return;
                 }
                 LOG.info("Database converted to JSON successfully");
+
+                // Validate JSON data
+                if (!isValidJson(jsonData)) {
+                    LOG.error("Invalid JSON data generated");
+                    broadcastSuccess(false);
+                    return;
+                }
 
                 // Compress JSON data
                 LOG.info("Compressing JSON data");
@@ -179,8 +189,15 @@ public class PeriodicExporter extends BroadcastReceiver {
                 LOG.info("Original JSON data size: " + jsonData.getBytes(StandardCharsets.UTF_8).length + " bytes");
                 LOG.info("Compressed JSON data size: " + compressedData.length + " bytes");
 
-                // Encode byte[] as Base64 (could be customized to other encodings if needed)
+                // Encode byte[] as Base64
                 String compressedDataBase64 = Base64.getEncoder().encodeToString(compressedData);
+
+                // Check Firestore size limits (1 MiB per document)
+                if (compressedDataBase64.length() > 1_000_000) {
+                    LOG.error("Compressed data exceeds Firestore size limit");
+                    broadcastSuccess(false);
+                    return;
+                }
 
                 // Upload data to Firestore
                 uploadDataToFirestore(compressedDataBase64);
@@ -218,8 +235,13 @@ public class PeriodicExporter extends BroadcastReceiver {
             // Iterate over DAOs and extract data
             for (AbstractDao<?, ?> dao : daos) {
                 String tableName = dao.getTablename();
-                if (tableName.equals("sqlite_sequence") || tableName.equals("android_metadata")) {
-                    continue; // Skip system tables
+
+                // Skip system tables and specific tables (BATTERY_LEVEL and ALARM)
+                if (tableName.equals("sqlite_sequence") ||
+                        tableName.equals("android_metadata") ||
+                        tableName.equalsIgnoreCase("BATTERY_LEVEL") ||
+                        tableName.equalsIgnoreCase("ALARM")) {
+                    continue; // Skip these tables
                 }
 
                 List<?> entities = dao.loadAll();
@@ -236,15 +258,12 @@ public class PeriodicExporter extends BroadcastReceiver {
                 if (properties == null) {
                     continue;
                 }
-                /**
-                 * Getting the last timestamp of the auto-export
-                 */
+
                 long lastExportTimestamp = GBApplication.app().getLastAutoExportTimestamp();
 
                 for (Object entity : entities) {
                     Map<String, Object> row = new HashMap<>();
                     boolean hasNonNullValue = false;
-
                     long recordTimestamp = 0;
 
                     for (Property property : properties) {
@@ -266,17 +285,27 @@ public class PeriodicExporter extends BroadcastReceiver {
                         }
                     }
 
+                    // Only include records with a timestamp greater than the last export timestamp
+                    //if (hasNonNullValue && recordTimestamp > lastExportTimestamp) {
                     if (hasNonNullValue) {
-                        if (recordTimestamp == 0 || recordTimestamp > lastExportTimestamp) {
-                            row.put("table_name", tableName);
-                            data.add(row);
-                        }
+                        row.put("table_name", tableName);
+                        data.add(row);
                     }
                 }
             }
 
             Gson gson = new Gson();
             return gson.toJson(data);
+        }
+
+        private boolean isValidJson(String jsonData) {
+            try {
+                JsonParser.parseString(jsonData);
+                return true;
+            } catch (JsonSyntaxException e) {
+                LOG.error("Invalid JSON data", e);
+                return false;
+            }
         }
 
         private void uploadDataToFirestore(String compressedDataBase64) {
