@@ -79,6 +79,7 @@ import nodomain.freeyourgadget.gadgetbridge.util.GB;
 import nodomain.freeyourgadget.gadgetbridge.util.GBChangeLog;
 import nodomain.freeyourgadget.gadgetbridge.util.PermissionsUtils;
 import nodomain.freeyourgadget.gadgetbridge.util.Prefs;
+import nodomain.freeyourgadget.gadgetbridge.cloud.HeartRateActivity;
 
 //TODO: extend AbstractGBActivity, but it requires actionbar that is not available
 public class ControlCenterv2 extends AppCompatActivity
@@ -352,6 +353,10 @@ public class ControlCenterv2 extends AppCompatActivity
             return false;
         } else if (itemId == R.id.device_action_discover) {
             launchDiscoveryActivity();
+            return false;
+        } else if (itemId == R.id.action_heart_rate) {
+            final Intent heartRateIntent = new Intent(this, HeartRateActivity.class);
+            startActivity(heartRateIntent);
             return false;
         } else if (itemId == R.id.action_quit) {
             GBApplication.quit();

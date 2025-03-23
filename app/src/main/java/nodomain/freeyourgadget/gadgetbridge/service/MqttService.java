@@ -1,84 +1,86 @@
 package nodomain.freeyourgadget.gadgetbridge.service;
 
 import android.app.Service;
-import android.content.BroadcastReceiver;
-import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.os.IBinder;
 import android.util.Log;
 
-import androidx.localbroadcastmanager.content.LocalBroadcastManager;
-
-import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
-import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 
-public class MqttService extends Service implements MqttCallback {
+public class MqttService extends Service {
     private static final String TAG = "MqttService";
-    private static final String BROKER_URL = "tcp://192.168.0.174:1883"; // Replace with your broker URL
-    private static final String CLIENT_ID = "GadgetBridgeClient"; // Unique client ID
-    private static final String TOPIC = "gadgetbridge/heartrate"; // Topic to publish heart rate data
-
     private MqttClient mqttClient;
-
-    private final BroadcastReceiver heartRateReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if ("HEART_RATE_DATA".equals(intent.getAction())) {
-                int heartRate = intent.getIntExtra("HEART_RATE", -1);
-                if (heartRate != -1) {
-                    publishMessage(TOPIC, String.valueOf(heartRate));
-                }
-            }
-        }
-    };
+    private String mqttBrokerUri;
+    private String mqttClientId = "AndroidClient";
+    private String mqttLogin;
+    private String mqttPassword;
 
     @Override
     public void onCreate() {
         super.onCreate();
-        connectToMqttBroker();
-
-        // Register to receive heart rate data
-        LocalBroadcastManager.getInstance(this).registerReceiver(
-                heartRateReceiver,
-                new IntentFilter("HEART_RATE_DATA")
-        );
+        Log.d(TAG, "MqttService created");
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null) {
+            String action = intent.getAction();
+            if ("SEND_MQTT_MESSAGE".equals(action)) {
+                String topic = intent.getStringExtra("topic");
+                String payload = intent.getStringExtra("payload");
+                sendMessage(topic, payload);
+            } else {
+                // Retrieve MQTT settings from the intent
+                mqttBrokerUri = intent.getStringExtra("mqttBrokerUri");
+                mqttLogin = intent.getStringExtra("mqttLogin");
+                mqttPassword = intent.getStringExtra("mqttPassword");
+
+                // Connect to the MQTT broker
+                connectToMqttBroker();
+            }
+        }
+
         return START_STICKY;
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-        disconnectFromMqttBroker();
+        Log.d(TAG, "MqttService destroyed");
 
-        // Unregister the receiver
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(heartRateReceiver);
+        // Disconnect from the MQTT broker
+        disconnectFromMqttBroker();
     }
 
     @Override
     public IBinder onBind(Intent intent) {
-        return null;
+        return null; // This is a started service, not a bound service
     }
 
     private void connectToMqttBroker() {
         try {
-            mqttClient = new MqttClient(BROKER_URL, CLIENT_ID, new MemoryPersistence());
+            if (mqttBrokerUri == null || mqttBrokerUri.isEmpty()) {
+                Log.e(TAG, "MQTT broker URI is not set.");
+                return;
+            }
+
+            mqttClient = new MqttClient(mqttBrokerUri, mqttClientId, new MemoryPersistence());
             MqttConnectOptions options = new MqttConnectOptions();
             options.setCleanSession(true);
-            options.setAutomaticReconnect(true); // Automatically reconnect if disconnected
+            options.setConnectionTimeout(60); // Increase timeout to 60 seconds
 
+            if (mqttLogin != null && !mqttLogin.isEmpty() && mqttPassword != null) {
+                options.setUserName(mqttLogin);
+                options.setPassword(mqttPassword.toCharArray());
+            }
+
+            Log.d(TAG, "Connecting to broker: " + mqttBrokerUri);
             mqttClient.connect(options);
-            mqttClient.setCallback(this);
-            Log.d(TAG, "Connected to MQTT broker");
+            Log.d(TAG, "Connected to MQTT broker at: " + mqttBrokerUri);
         } catch (MqttException e) {
             Log.e(TAG, "Failed to connect to MQTT broker", e);
         }
@@ -90,38 +92,23 @@ public class MqttService extends Service implements MqttCallback {
                 mqttClient.disconnect();
                 Log.d(TAG, "Disconnected from MQTT broker");
             } catch (MqttException e) {
-                Log.e(TAG, "Failed to disconnect from MQTT broker", e);
+                Log.e(TAG, "Error disconnecting from MQTT broker", e);
             }
         }
     }
 
-    public void publishMessage(String topic, String message) {
+    public void sendMessage(String topic, String payload) {
         if (mqttClient != null && mqttClient.isConnected()) {
             try {
-                MqttMessage mqttMessage = new MqttMessage(message.getBytes());
-                mqttClient.publish(topic, mqttMessage);
-                Log.d(TAG, "Published message to topic: " + topic);
+                MqttMessage message = new MqttMessage(payload.getBytes());
+                message.setQos(0);
+                mqttClient.publish(topic, message);
+                Log.d(TAG, "Published message to MQTT topic '" + topic + "': " + payload);
             } catch (MqttException e) {
-                Log.e(TAG, "Failed to publish message", e);
+                Log.e(TAG, "Error publishing message to MQTT broker", e);
             }
+        } else {
+            Log.e(TAG, "MQTT client is not connected!");
         }
-    }
-
-    @Override
-    public void connectionLost(Throwable cause) {
-        Log.e(TAG, "Connection to MQTT broker lost", cause);
-        // Attempt to reconnect
-        connectToMqttBroker();
-    }
-
-    @Override
-    public void messageArrived(String topic, MqttMessage message) throws Exception {
-        String payload = new String(message.getPayload());
-        Log.d(TAG, "Message arrived on topic " + topic + ": " + payload);
-    }
-
-    @Override
-    public void deliveryComplete(IMqttDeliveryToken token) {
-        Log.d(TAG, "Message delivery complete");
     }
 }

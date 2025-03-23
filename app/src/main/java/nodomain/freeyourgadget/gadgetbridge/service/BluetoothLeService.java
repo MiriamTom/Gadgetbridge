@@ -5,6 +5,7 @@ import android.app.Service;
 import android.bluetooth.*;
 import android.bluetooth.le.*;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.IBinder;
 import android.os.ParcelUuid;
@@ -18,6 +19,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import nodomain.freeyourgadget.gadgetbridge.GBApplication;
+import nodomain.freeyourgadget.gadgetbridge.cloud.MqttManager;
+
 public class BluetoothLeService extends Service {
     private static final UUID HEART_RATE_SERVICE_UUID = UUID.fromString("0000180D-0000-1000-8000-00805F9B34FB");
     private static final UUID HEART_RATE_MEASUREMENT_UUID = UUID.fromString("00002A37-0000-1000-8000-00805F9B34FB");
@@ -27,6 +31,8 @@ public class BluetoothLeService extends Service {
     private BluetoothLeScanner bluetoothLeScanner;
     private BluetoothGatt bluetoothGatt;
     private boolean isScanning = false;
+    private MqttManager mqttManager;
+
 
     private final ScanCallback scanCallback = new ScanCallback() {
         @SuppressLint("MissingPermission")
@@ -81,7 +87,7 @@ public class BluetoothLeService extends Service {
                 }
             }
         }
-
+        @SuppressLint("MissingPermission")
         @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
             if (HEART_RATE_MEASUREMENT_UUID.equals(characteristic.getUuid())) {
@@ -90,10 +96,19 @@ public class BluetoothLeService extends Service {
                     int heartRate = parseHeartRate(data);
                     Log.d("HeartRate", "Received heart rate: " + heartRate + " bpm");
 
-                    // Send heart rate data to MqttService
-                    Intent intent = new Intent("HEART_RATE_DATA");
-                    intent.putExtra("HEART_RATE", heartRate);
-                    LocalBroadcastManager.getInstance(BluetoothLeService.this).sendBroadcast(intent);
+                    // Retrieve user and device name from SharedPreferences
+                    SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+                    String deviceName = gatt.getDevice().getName();
+                    String userName = GBApplication.getPrefs().getUserName();
+
+                    // Construct the MQTT topic and payload
+                    String topic = "/BP/GB/device/";
+                    String payload = String.format("{\"user\": \"%s\", \"device\": \"%s\", \"heartRate\": %d}", userName, deviceName, heartRate);
+
+                    // Send the message to the MQTT broker
+                    if (mqttManager != null) {
+                        mqttManager.sendMessage(topic, payload);
+                    }
                 }
             }
         }
@@ -103,6 +118,9 @@ public class BluetoothLeService extends Service {
     public void onCreate() {
         super.onCreate();
         initializeBluetooth();
+
+        mqttManager = MqttManager.getInstance();
+        mqttManager.connect();
     }
 
     @Override
@@ -119,6 +137,10 @@ public class BluetoothLeService extends Service {
         if (bluetoothGatt != null) {
             bluetoothGatt.close();
             bluetoothGatt = null;
+        }
+
+        if (mqttManager != null) {
+            mqttManager.disconnect();
         }
     }
 

@@ -938,6 +938,12 @@
             android:name=".devices.cycling_sensor.activity.CyclingLiveDataActivity"
             android:launchMode="singleInstance"
             android:exported="true" />
+
+
+        <activity
+            android:name=".cloud.HeartRateActivity"
+            android:exported="false" />
+
     </application>
 
 </manifest>

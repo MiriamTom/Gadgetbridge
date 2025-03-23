@@ -230,8 +230,8 @@ public class GBApplication extends Application {
         Intent serviceIntent = new Intent(this, BluetoothLeService.class);
         startService(serviceIntent);
 
-        //Intent mqttServiceIntent = new Intent(this, MqttService.class);
-        //startService(mqttServiceIntent);
+        Intent mqttServiceIntent = new Intent(this, MqttService.class);
+        startService(mqttServiceIntent);
 
         if (lockHandler != null) {
             // guard against multiple invocations (robolectric)
