@@ -76,6 +76,8 @@ import nodomain.freeyourgadget.gadgetbridge.entities.DaoMaster;
 import nodomain.freeyourgadget.gadgetbridge.entities.DaoSession;
 import nodomain.freeyourgadget.gadgetbridge.entities.Device;
 import nodomain.freeyourgadget.gadgetbridge.externalevents.BluetoothStateChangeReceiver;
+import nodomain.freeyourgadget.gadgetbridge.externalevents.gps.GBLocationProviderType;
+import nodomain.freeyourgadget.gadgetbridge.externalevents.gps.GBLocationService;
 import nodomain.freeyourgadget.gadgetbridge.externalevents.opentracks.OpenTracksContentObserver;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDevice;
 import nodomain.freeyourgadget.gadgetbridge.impl.GBDeviceService;
@@ -84,6 +86,7 @@ import nodomain.freeyourgadget.gadgetbridge.model.DeviceService;
 import nodomain.freeyourgadget.gadgetbridge.model.DeviceType;
 import nodomain.freeyourgadget.gadgetbridge.model.Weather;
 import nodomain.freeyourgadget.gadgetbridge.service.BluetoothLeService;
+import nodomain.freeyourgadget.gadgetbridge.service.LocationMqttService;
 import nodomain.freeyourgadget.gadgetbridge.service.MqttService;
 import nodomain.freeyourgadget.gadgetbridge.service.NotificationCollectorMonitorService;
 import nodomain.freeyourgadget.gadgetbridge.util.AndroidUtils;
@@ -223,15 +226,19 @@ public class GBApplication extends Application {
     public void onCreate() {
         app = this;
         super.onCreate();
-
+        // TODO fix this
+        sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this);
+        prefs = new GBPrefs(sharedPrefs);
 
         FirebaseApp.initializeApp(this);
 
         Intent serviceIntent = new Intent(this, BluetoothLeService.class);
         startService(serviceIntent);
 
-        Intent mqttServiceIntent = new Intent(this, MqttService.class);
-        startService(mqttServiceIntent);
+        initializeMqttService();
+
+        Intent LocationMqttService = new Intent(this, LocationMqttService.class);
+        startService(LocationMqttService);
 
         if (lockHandler != null) {
             // guard against multiple invocations (robolectric)
@@ -298,6 +305,30 @@ public class GBApplication extends Application {
                                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                                 .build(), context);
             }
+        }
+    }
+
+    private void initializeMqttService() {
+        try {
+            SharedPreferences prefs = getSharedPreferences("HeartRatePrefs", MODE_PRIVATE);
+            String brokerAddress = prefs.getString("mqttBrokerAddress", "");
+            int brokerPort = prefs.getInt("mqttBrokerPort", 1883);
+            String username = prefs.getString("mqttLogin", "");
+            String password = prefs.getString("mqttPassword", "");
+
+            if (!brokerAddress.isEmpty()) {
+                String brokerUri = "tcp://" + brokerAddress + ":" + brokerPort;
+
+                Intent mqttIntent = new Intent(this, MqttService.class);
+                mqttIntent.putExtra("mqttBrokerUri", brokerUri);
+                mqttIntent.putExtra("mqttLogin", username);
+                mqttIntent.putExtra("mqttPassword", password);
+                startService(mqttIntent);
+
+                GB.log("MQTT service started with saved settings", GB.INFO, null);
+            }
+        } catch (Exception e) {
+            GB.log("Error initializing MQTT service: " + e.getMessage(), GB.ERROR, e);
         }
     }
 

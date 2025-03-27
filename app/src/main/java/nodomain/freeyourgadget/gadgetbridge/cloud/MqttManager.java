@@ -1,5 +1,8 @@
 package nodomain.freeyourgadget.gadgetbridge.cloud;
 
+import android.content.Intent;
+import android.util.Log;
+
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
@@ -9,6 +12,11 @@ import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import android.content.Context;
+import androidx.core.content.ContextCompat;
+
+import nodomain.freeyourgadget.gadgetbridge.service.MqttService;
 
 public class MqttManager {
     private String mqttBrokerUri;
@@ -138,6 +146,8 @@ public class MqttManager {
             Log.e("MqttManager", "MQTT client is not connected");
         }
     }*/
+
+
 
     public void sendCustomMessage(String topic, String message) {
         sendMessage(topic, message);

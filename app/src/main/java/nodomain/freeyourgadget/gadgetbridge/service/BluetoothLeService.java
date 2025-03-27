@@ -1,10 +1,12 @@
 package nodomain.freeyourgadget.gadgetbridge.service;
 
+
 import android.annotation.SuppressLint;
 import android.app.Service;
 import android.bluetooth.*;
 import android.bluetooth.le.*;
 import android.content.Intent;
+import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.IBinder;
@@ -17,6 +19,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 import nodomain.freeyourgadget.gadgetbridge.GBApplication;
@@ -27,11 +30,14 @@ public class BluetoothLeService extends Service {
     private static final UUID HEART_RATE_MEASUREMENT_UUID = UUID.fromString("00002A37-0000-1000-8000-00805F9B34FB");
     private static final UUID CLIENT_CHARACTERISTIC_CONFIG_UUID = UUID.fromString("00002902-0000-1000-8000-00805F9B34FB");
 
+
     private BluetoothAdapter bluetoothAdapter;
     private BluetoothLeScanner bluetoothLeScanner;
     private BluetoothGatt bluetoothGatt;
     private boolean isScanning = false;
     private MqttManager mqttManager;
+
+    private  Context context;
 
 
     private final ScanCallback scanCallback = new ScanCallback() {
@@ -96,19 +102,35 @@ public class BluetoothLeService extends Service {
                     int heartRate = parseHeartRate(data);
                     Log.d("HeartRate", "Received heart rate: " + heartRate + " bpm");
 
-                    // Retrieve user and device name from SharedPreferences
-                    SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
-                    String deviceName = gatt.getDevice().getName();
-                    String userName = GBApplication.getPrefs().getUserName();
-
-                    // Construct the MQTT topic and payload
-                    String topic = "/BP/GB/device/";
-                    String payload = String.format("{\"user\": \"%s\", \"device\": \"%s\", \"heartRate\": %d}", userName, deviceName, heartRate);
-
-                    // Send the message to the MQTT broker
-                    if (mqttManager != null) {
-                        mqttManager.sendMessage(topic, payload);
+                    // Get device info safely
+                    String deviceName = "Unknown";
+                    try {
+                        BluetoothDevice device = gatt.getDevice();
+                        deviceName = device.getName() != null ? device.getName() : device.getAddress();
+                    } catch (Exception e) {
+                        Log.e("BluetoothGatt", "Error getting device info", e);
                     }
+
+                    // Get user info safely
+                    String userName = "Unknown";
+                    try {
+                        userName = GBApplication.getPrefs().getUserName();
+                    } catch (Exception e) {
+                        Log.e("BluetoothGatt", "Error getting user name", e);
+                    }
+
+                    // Create MQTT message
+                    String topic = String.format("BP/GB/realtime-hr/%s/%s",
+                            sanitizeForTopic(userName),
+                            sanitizeForTopic(deviceName));
+
+                    String payload = String.format(Locale.US,
+                            "{\"timestamp\": %d, \"heart_rate\": %d}",
+                            System.currentTimeMillis(),
+                            heartRate);
+
+                    // Send via MQTT Service
+                    sendMqttMessage(topic, payload);
                 }
             }
         }
@@ -117,12 +139,27 @@ public class BluetoothLeService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        this.context = this; // Initialize context
         initializeBluetooth();
-
-        mqttManager = MqttManager.getInstance();
-        mqttManager.connect();
     }
 
+    private String sanitizeForTopic(String input) {
+        return input.replaceAll("[^a-zA-Z0-9_-]", "_");
+    }
+
+    private void sendMqttMessage(String topic, String payload) {
+        try {
+            Intent mqttIntent = new Intent(context, MqttService.class);
+            mqttIntent.setAction("SEND_MQTT_MESSAGE");
+            mqttIntent.putExtra("topic", topic);
+            mqttIntent.putExtra("payload", payload);
+            context.startService(mqttIntent);
+
+           // Log.d("MQTT", "Sent to " + topic + ": " + payload);
+        } catch (Exception e) {
+            Log.e("MQTT", "Failed to send message", e);
+        }
+    }
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         startScan();

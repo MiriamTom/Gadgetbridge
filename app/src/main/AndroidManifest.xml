@@ -508,6 +508,7 @@
 
         <service android:name=".service.BluetoothLeService" />
         <service android:name=".service.MqttService" />
+        <service android:name=".service.LocationMqttService" />
 
         <receiver
             android:name=".externalevents.GenericWeatherReceiver"

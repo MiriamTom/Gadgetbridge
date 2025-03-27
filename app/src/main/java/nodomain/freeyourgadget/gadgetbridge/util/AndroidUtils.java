@@ -43,6 +43,8 @@ import androidx.annotation.Nullable;
 import androidx.core.content.FileProvider;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.material.color.DynamicColors;
 
 import org.slf4j.Logger;
@@ -352,4 +354,10 @@ public class AndroidUtils {
             return null;
         }
     }
+
+    public static boolean isHuaweiDevice() {
+        return android.os.Build.MANUFACTURER.equalsIgnoreCase("HUAWEI");
+    }
+
+
 }
